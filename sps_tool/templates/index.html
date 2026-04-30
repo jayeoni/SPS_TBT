@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPS 통보문 처리 도구</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #f5f6fa; color: #2c3e50; }
+
+.topbar {
+  background: #1a5276;
+  color: white;
+  padding: 14px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.topbar h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; }
+.topbar a { color: #aed6f1; text-decoration: none; font-size: 13px; }
+.topbar a:hover { color: white; }
+
+.container { max-width: 920px; margin: 32px auto; padding: 0 20px; }
+
+.alert-box {
+  background: #fef9e7;
+  border: 1px solid #f39c12;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 13px;
+}
+.alert-box strong { color: #e67e22; }
+
+/* Drop zone */
+.dropzone {
+  border: 2px dashed #a9cce3;
+  border-radius: 10px;
+  background: white;
+  padding: 52px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  margin-bottom: 20px;
+}
+.dropzone.dragover { border-color: #1a5276; background: #eaf4fb; }
+.dropzone svg { width: 44px; height: 44px; margin-bottom: 12px; opacity: 0.5; }
+.dropzone p { color: #7f8c8d; font-size: 14px; line-height: 1.6; }
+.dropzone p span { color: #1a5276; font-weight: 600; cursor: pointer; }
+#file-input { display: none; }
+
+.file-list {
+  background: white;
+  border: 1px solid #d5d8dc;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: none;
+}
+.file-list-header {
+  padding: 10px 16px;
+  background: #f2f3f4;
+  border-radius: 8px 8px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  border-bottom: 1px solid #d5d8dc;
+}
+.file-item {
+  padding: 9px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-item:last-child { border-bottom: none; }
+.file-item .remove-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #e74c3c;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+}
+
+.btn-row { display: flex; gap: 10px; margin-bottom: 28px; }
+.btn {
+  padding: 11px 28px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #1a5276; color: white; }
+.btn-primary:hover:not(:disabled) { background: #154360; }
+.btn-clear { background: #eee; color: #555; }
+.btn-clear:hover:not(:disabled) { background: #ddd; }
+
+/* Progress */
+.progress-wrap { display: none; margin-bottom: 20px; }
+.progress-bar-bg {
+  height: 8px;
+  background: #d5d8dc;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: #1a5276;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+.progress-label { font-size: 12px; color: #777; }
+
+/* Results table */
+.results-section { display: none; }
+.results-section h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: #1a5276; }
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 13px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+.results-table th {
+  background: #1a5276;
+  color: white;
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.results-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid #eef;
+  vertical-align: top;
+}
+.results-table tr:last-child td { border-bottom: none; }
+.results-table tr:hover td { background: #f8faff; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-ok    { background: #d5f5e3; color: #1e8449; }
+.badge-warn  { background: #fef9e7; color: #d68910; }
+.badge-err   { background: #fadbd8; color: #c0392b; }
+.badge-skip  { background: #eaecee; color: #717d7e; }
+.badge-type-긴급 { background: #fadbd8; color: #c0392b; }
+.badge-type-일반 { background: #d6eaf8; color: #1a5276; }
+.badge-type-추가  { background: #e8daef; color: #6c3483; }
+
+.flag-chip {
+  display: inline-block;
+  background: #fef9e7;
+  border: 1px solid #f39c12;
+  color: #8b6914;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  margin: 1px;
+}
+
+.expand-btn {
+  background: none;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #555;
+}
+.detail-row { display: none; }
+.detail-row td {
+  background: #f8faff;
+  padding: 12px 16px;
+  font-size: 12px;
+  color: #444;
+  border-bottom: 1px solid #eef;
+}
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.detail-item strong { color: #1a5276; display: block; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🌾 SPS 통보문 처리 도구</h1>
+  <a href="/settings">⚙ 설정</a>
+</div>
+
+<div class="container">
+
+  {% if missing %}
+  <div class="alert-box">
+    <strong>⚠ 설정 필요:</strong>
+    다음 항목을 <a href="/settings">설정 페이지</a>에서 입력해주세요:
+    {{ missing | join(', ') }}
+  </div>
+  {% endif %}
+
+  <!-- Drop Zone -->
+  <div class="dropzone" id="dropzone">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#1a5276" stroke-width="1.5">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14,2 14,8 20,8"/>
+      <line x1="12" y1="18" x2="12" y2="12"/>
+      <polyline points="9,15 12,12 15,15"/>
+    </svg>
+    <p>
+      통보문 Word 파일(.docx)을 여기에 놓으세요<br>
+      또는 <span onclick="document.getElementById('file-input').click()">클릭하여 파일 선택</span>
+    </p>
+    <p style="margin-top:8px; font-size:12px; color:#aaa;">단일 파일 또는 여러 파일 동시 처리 가능</p>
+    <input type="file" id="file-input" accept=".docx" multiple>
+  </div>
+
+  <!-- Selected File List -->
+  <div class="file-list" id="file-list">
+    <div class="file-list-header">선택된 파일</div>
+    <div id="file-items"></div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="btn-row">
+    <button class="btn btn-primary" id="process-btn" disabled onclick="processFiles()">처리 시작</button>
+    <button class="btn btn-clear" id="clear-btn" onclick="clearFiles()">초기화</button>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+    <div class="progress-label" id="progress-label">처리 중...</div>
+  </div>
+
+  <!-- Results -->
+  <div class="results-section" id="results-section">
+    <h2>처리 결과</h2>
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>파일명</th>
+          <th>문서번호</th>
+          <th>유형</th>
+          <th>국가</th>
+          <th>제목</th>
+          <th>중요도</th>
+          <th>구분</th>
+          <th>상태</th>
+          <th>검토필요</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="results-tbody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+let selectedFiles = [];
+
+const dropzone  = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+const fileList  = document.getElementById('file-list');
+const fileItems = document.getElementById('file-items');
+const processBtn = document.getElementById('process-btn');
+
+// Drag & drop
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  addFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e => addFiles(e.target.files));
+
+function addFiles(fileListObj) {
+  for (const f of fileListObj) {
+    if (f.name.endsWith('.docx') && !selectedFiles.find(x => x.name === f.name)) {
+      selectedFiles.push(f);
+    }
+  }
+  renderFileList();
+}
+
+function renderFileList() {
+  if (selectedFiles.length === 0) {
+    fileList.style.display = 'none';
+    processBtn.disabled = true;
+    return;
+  }
+  fileList.style.display = 'block';
+  processBtn.disabled = false;
+  fileItems.innerHTML = selectedFiles.map((f, i) => `
+    <div class="file-item">
+      📄 ${f.name}
+      <span style="color:#aaa;font-size:11px">${(f.size/1024).toFixed(0)} KB</span>
+      <button class="remove-btn" onclick="removeFile(${i})">×</button>
+    </div>
+  `).join('');
+}
+
+function removeFile(idx) {
+  selectedFiles.splice(idx, 1);
+  renderFileList();
+}
+
+function clearFiles() {
+  selectedFiles = [];
+  fileInput.value = '';
+  renderFileList();
+  document.getElementById('results-section').style.display = 'none';
+  document.getElementById('progress-wrap').style.display = 'none';
+}
+
+async function processFiles() {
+  if (selectedFiles.length === 0) return;
+
+  processBtn.disabled = true;
+  document.getElementById('progress-wrap').style.display = 'block';
+  document.getElementById('results-section').style.display = 'none';
+
+  const formData = new FormData();
+  selectedFiles.forEach(f => formData.append('files', f));
+
+  setProgress(10, `${selectedFiles.length}개 파일 처리 중...`);
+
+  try {
+    const resp = await fetch('/process', { method: 'POST', body: formData });
+    setProgress(90, '결과 수신 중...');
+    const data = await resp.json();
+    setProgress(100, '완료');
+    renderResults(data.results || []);
+  } catch (err) {
+    setProgress(0, '');
+    alert('오류가 발생했습니다: ' + err.message);
+  }
+
+  processBtn.disabled = false;
+}
+
+function setProgress(pct, label) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = label;
+}
+
+function renderResults(results) {
+  const section = document.getElementById('results-section');
+  const tbody = document.getElementById('results-tbody');
+  section.style.display = 'block';
+  tbody.innerHTML = '';
+
+  results.forEach((r, idx) => {
+    const statusBadge = r.skipped
+      ? '<span class="badge badge-skip">미등록</span>'
+      : r.success
+        ? '<span class="badge badge-ok">✓ 완료</span>'
+        : '<span class="badge badge-err">✗ 오류</span>';
+
+    const flags = (r.flags || []).map(f =>
+      `<span class="flag-chip">${f}</span>`
+    ).join('');
+
+    const typeBadge = r.type
+      ? `<span class="badge badge-type-${r.type}">${r.type}</span>` : '';
+
+    const importanceBadge = r.importance
+      ? `<strong style="color:${r.importance==='검토'?'#c0392b':r.importance==='참고'?'#1a5276':'#777'}">${r.importance}</strong>` : '';
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${r.filename}</td>
+      <td style="font-family:monospace;font-size:11px">${r.doc_number || '-'}</td>
+      <td>${typeBadge}</td>
+      <td>${r.notifying_country || '-'}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.title_kr||''}">${r.title_kr || '-'}</td>
+      <td>${importanceBadge}</td>
+      <td>${r.category || '-'}</td>
+      <td>${statusBadge}</td>
+      <td>${flags || (r.success ? '<span style="color:#aaa;font-size:11px">없음</span>' : '')}</td>
+      <td><button class="expand-btn" onclick="toggleDetail(${idx})">▼ 상세</button></td>
+    `;
+    tbody.appendChild(row);
+
+    // Detail row
+    const detail = document.createElement('tr');
+    detail.className = 'detail-row';
+    detail.id = `detail-${idx}`;
+    const errorInfo = r.error ? `<div style="color:#c0392b;margin-bottom:8px">⚠ ${r.error}</div>` : '';
+    detail.innerHTML = `<td colspan="10">
+      ${errorInfo}
+      <div class="detail-grid">
+        <div class="detail-item"><strong>Excel 행 업데이트</strong>${r.excel_updated ? '✓ 업데이트됨 (행 '+r.row_idx+')' : (r.skipped ? '⚠ 문서번호 미등록 - Excel을 확인해주세요' : '✗')}</div>
+        <div class="detail-item"><strong>번역 Word 파일</strong>${r.word_file ? '✓ ' + r.word_file : '-'}</div>
+      </div>
+    </td>`;
+    tbody.appendChild(detail);
+  });
+}
+
+function toggleDetail(idx) {
+  const row = document.getElementById(`detail-${idx}`);
+  row.style.display = row.style.display === 'table-row' ? 'none' : 'table-row';
+}
+</script>
+</body>
+</html>

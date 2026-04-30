@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(python --version)",
+      "PowerShell(py --version)",
+      "PowerShell($env:PATH -split \";\" | ForEach-Object { Write-Host $_ })",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\mafra\\\\SPS통보문\\\\sps_tool\" -Recurse | Select-Object FullName | Where-Object { $_.FullName -notmatch '__pycache__' })",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\mafra\\\\SPS통보문\" -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object -First 20 Name, Extension)",
+      "PowerShell(Head -20)",
+      "PowerShell($files = Get-ChildItem \"C:\\\\Users\\\\mafra\\\\SPS통보문\\\\26.3월 SPS 통보문\"; Write-Host \"Count: $\\($files.Count\\)\"; $files | Select-Object -First 20 | ForEach-Object { Write-Host $_.Name })",
+      "PowerShell(cd \"C:\\\\Users\\\\mafra\\\\SPS통보문\\\\sps_tool\"; Start-Process python -ArgumentList \"app.py\" -WindowStyle Hidden -PassThru | Select-Object Id; Start-Sleep -Seconds 3; try { $r = Invoke-WebRequest -Uri \"http://localhost:5000/health\" -TimeoutSec 5; Write-Host \"Health check: $\\($r.StatusCode\\) - $\\($r.Content\\)\" } catch { Write-Host \"Error: $_\" })",
+      "PowerShell(cd \"C:\\\\Users\\\\mafra\\\\SPS통보문\\\\sps_tool\"; $p = Start-Process -FilePath python -ArgumentList \"app.py\" -PassThru -WindowStyle Hidden; Start-Sleep -Seconds 4; $result = Invoke-RestMethod -Uri \"http://localhost:5000/health\" -Method Get -ErrorAction Stop; Write-Host \"Server OK: api_key_set=$\\($result.api_key_set\\), excel_exists=$\\($result.excel_exists\\)\"; Stop-Process -Id $p.Id -Force)",
+      "PowerShell(cd \"C:\\\\Users\\\\mafra\\\\SPS통보문\\\\sps_tool\"; $p = Start-Process -FilePath python -ArgumentList \"app.py\" -PassThru -WindowStyle Hidden; Start-Sleep -Seconds 4; $result = Invoke-RestMethod -Uri \"http://localhost:5000/health\" -Method Get -ErrorAction Stop; Write-Host \"Server OK: api_key_set=$\\($result.api_key_set\\), excel_exists=$\\($result.excel_exists\\), export_loaded=$\\($result.export_loaded\\)\"; Stop-Process -Id $p.Id -Force)",
+      "PowerShell(Write-Host \"EXCEL_PATH: '$env:EXCEL_PATH'\"; Write-Host \"EXPORT_DATA_PATH: '$env:EXPORT_DATA_PATH'\")"
+    ]
+  }
+}

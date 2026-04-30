@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>설정 — SPS 통보문 처리 도구</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #f5f6fa; color: #2c3e50; }
+.topbar {
+  background: #1a5276; color: white;
+  padding: 14px 28px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.topbar h1 { font-size: 17px; font-weight: 600; }
+.topbar a { color: #aed6f1; text-decoration: none; font-size: 13px; }
+.container { max-width: 640px; margin: 36px auto; padding: 0 20px; }
+.card {
+  background: white; border-radius: 10px; padding: 28px 32px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.card h2 { font-size: 16px; font-weight: 600; margin-bottom: 22px; color: #1a5276; border-bottom: 1px solid #eee; padding-bottom: 12px; }
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #444; }
+.form-group small { display: block; font-size: 11px; color: #888; margin-top: 4px; line-height: 1.5; }
+.form-group input[type=text], .form-group input[type=password] {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #333;
+}
+.form-group input:focus { outline: none; border-color: #1a5276; box-shadow: 0 0 0 2px #d6eaf8; }
+.btn-row { margin-top: 24px; display: flex; gap: 10px; }
+.btn { padding: 10px 26px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.btn-primary { background: #1a5276; color: white; }
+.btn-primary:hover { background: #154360; }
+.btn-back { background: #eee; color: #555; text-decoration: none; display: inline-flex; align-items: center; }
+.btn-back:hover { background: #ddd; }
+.alert-ok {
+  background: #d5f5e3; border: 1px solid #2ecc71;
+  border-radius: 6px; padding: 10px 16px; margin-bottom: 20px;
+  font-size: 13px; color: #1e8449; font-weight: 600;
+}
+.section-note {
+  background: #fef9e7; border-left: 3px solid #f39c12;
+  padding: 10px 14px; margin-bottom: 20px; font-size: 12px; line-height: 1.6; color: #555;
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>⚙ 설정</h1>
+  <a href="/">← 메인으로</a>
+</div>
+
+<div class="container">
+
+  {% if message %}
+  <div class="alert-ok">✓ {{ message }}</div>
+  {% endif %}
+
+  <div class="card">
+    <h2>API 및 파일 경로 설정</h2>
+
+    <div class="section-note">
+      설정은 <code>.env</code> 파일에 저장됩니다. API 키는 Anthropic Console에서 발급받으세요.
+    </div>
+
+    <form method="POST">
+
+      <div class="form-group">
+        <label>🔑 Anthropic API 키</label>
+        <input type="password" name="api_key"
+               value="{{ config.api_key if config.api_key else '' }}"
+               placeholder="sk-ant-...">
+        <small>claude.ai → 계정 → API Keys에서 발급. .env 파일에 저장됩니다.</small>
+      </div>
+
+      <div class="form-group">
+        <label>📊 Excel 파일 경로 (SPS 통보문 내역)</label>
+        <input type="text" name="excel_path"
+               value="{{ config.excel_path }}"
+               placeholder="C:\Users\mafra\SPS통보문\260428 SPS 통보문 내역(4월 4주).xlsx">
+        <small>처리 결과가 기록되는 월별 Excel 파일의 전체 경로를 입력하세요.</small>
+      </div>
+
+      <div class="form-group">
+        <label>📈 수출 실적 파일 경로</label>
+        <input type="text" name="export_data_path"
+               value="{{ config.export_data_path }}"
+               placeholder="C:\Users\mafra\SPS통보문\2025_연간 전체실적_전체.xlsx">
+        <small>국내수출품목 자동 조회에 사용됩니다 (2025_연간 전체실적_전체.xlsx).</small>
+      </div>
+
+      <div class="form-group">
+        <label>📅 대상 월 시트 (선택사항)</label>
+        <input type="text" name="target_month"
+               value="{{ config.target_month }}"
+               placeholder="예: 26.4월 (비워두면 현재 월 자동 선택)">
+        <small>비워두면 현재 날짜 기준으로 자동 선택합니다.</small>
+      </div>
+
+      <div class="btn-row">
+        <button type="submit" class="btn btn-primary">저장</button>
+        <a href="/" class="btn btn-back">취소</a>
+      </div>
+
+    </form>
+  </div>
+
+</div>
+</body>
+</html>
