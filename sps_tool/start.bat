@@ -2,6 +2,12 @@
 chcp 65001 > nul
 cd /d "%~dp0"
 
+:: Kill any existing Flask process on port 5000 to avoid stale-server issues
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":5000 " ^| findstr "LISTENING"') do (
+    echo [SPS Tool] 기존 서버 종료 중 (PID %%a)...
+    taskkill /PID %%a /F > nul 2>&1
+)
+
 :: Check Python
 python --version > nul 2>&1
 if errorlevel 1 (
