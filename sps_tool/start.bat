@@ -25,15 +25,7 @@ if not exist ".deps_installed" (
     echo [SPS Tool] 패키지 설치 완료.
 )
 
-:: Setup .env if missing
-if not exist ".env" (
-    copy .env.example .env > nul
-    echo [SPS Tool] .env 파일을 생성했습니다. API 키와 파일 경로를 입력해주세요.
-    notepad .env
-    echo 저장 후 아무 키나 누르세요...
-    pause > nul
-)
-
 echo [SPS Tool] 서버 시작 중... (브라우저에서 http://localhost:5000 열립니다)
+echo [SPS Tool] 엔진 설정은 브라우저에서 "설정" 메뉴를 이용하세요.
 python app.py
 pause

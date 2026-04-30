@@ -1,12 +1,16 @@
 """
-Claude API integration for WTO SPS notification processing.
-Handles translation, normalization, classification, and summary generation.
+LLM integration for WTO SPS notification processing.
+Supports Ollama (local, no API key) and Anthropic Claude (cloud).
 """
 import json
 import os
-import anthropic
+import re
+import urllib.request
+import urllib.error
 
-MODEL = 'claude-sonnet-4-6'
+MODEL_ANTHROPIC = 'claude-sonnet-4-6'
+MODEL_OLLAMA_DEFAULT = 'qwen2.5:7b'
+OLLAMA_BASE_URL = 'http://localhost:11434'
 
 SYSTEM_PROMPT = """You are an expert assistant for the Korean Ministry of Agriculture, Food and Rural Affairs (농림축산식품부, MAFRA) processing WTO SPS (Sanitary and Phytosanitary) notifications.
 
@@ -138,46 +142,121 @@ Return ONLY this JSON object (no other text):
 }}"""
 
 
+def _parse_llm_response(raw: str) -> dict:
+    """Extract and parse JSON from LLM response, handling markdown fences."""
+    # Strip markdown code fences that some models add
+    raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
+    raw = re.sub(r'\s*```\s*$', '', raw, flags=re.MULTILINE)
+    raw = raw.strip()
+
+    if raw.startswith('{'):
+        json_str = raw
+    else:
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not m:
+            raise ValueError(f'LLM 응답에서 JSON을 찾을 수 없습니다: {raw[:300]}')
+        json_str = m.group()
+
+    return json.loads(json_str)
+
+
+def _process_with_anthropic(parsed: dict, export_items: str, terminology: dict, api_key: str) -> dict:
+    import anthropic
+    key = api_key or os.environ.get('ANTHROPIC_API_KEY', '')
+    if not key:
+        raise ValueError('ANTHROPIC_API_KEY가 설정되지 않았습니다.')
+    client = anthropic.Anthropic(api_key=key)
+    user_prompt = _build_user_prompt(parsed, export_items, terminology)
+    message = client.messages.create(
+        model=MODEL_ANTHROPIC,
+        max_tokens=2048,
+        system=SYSTEM_PROMPT,
+        messages=[{'role': 'user', 'content': user_prompt}],
+    )
+    raw = message.content[0].text.strip()
+    return _parse_llm_response(raw)
+
+
+def _process_with_ollama(parsed: dict, export_items: str, terminology: dict, model: str) -> dict:
+    user_prompt = _build_user_prompt(parsed, export_items, terminology)
+    payload = json.dumps({
+        'model': model,
+        'messages': [
+            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'user', 'content': user_prompt},
+        ],
+        'stream': False,
+        'options': {'temperature': 0.1, 'num_predict': 2048},
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        f'{OLLAMA_BASE_URL}/api/chat',
+        data=payload,
+        method='POST',
+        headers={'Content-Type': 'application/json'},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            data = json.loads(resp.read())
+            raw = data['message']['content'].strip()
+    except urllib.error.URLError as e:
+        msg = str(e).lower()
+        if 'connection refused' in msg or 'connect' in msg:
+            raise ValueError(
+                'Ollama에 연결할 수 없습니다.\n'
+                '1. https://ollama.com 에서 Ollama를 설치하세요.\n'
+                '2. 터미널에서 실행: ollama serve\n'
+                f'3. 모델 다운로드: ollama pull {model}'
+            )
+        raise ValueError(f'Ollama 오류: {e}')
+    except Exception as e:
+        resp_text = ''
+        if hasattr(e, 'read'):
+            try:
+                resp_text = e.read().decode('utf-8', errors='replace')
+            except Exception:
+                pass
+        if 'model' in resp_text.lower() and 'not found' in resp_text.lower():
+            raise ValueError(
+                f'Ollama 모델 "{model}"을 찾을 수 없습니다.\n'
+                f'설치 명령: ollama pull {model}'
+            )
+        raise ValueError(f'Ollama 처리 오류: {e}')
+
+    return _parse_llm_response(raw)
+
+
+def check_ollama_status(model: str = MODEL_OLLAMA_DEFAULT) -> dict:
+    """Check if Ollama is running and the model is available. Returns status dict."""
+    try:
+        req = urllib.request.Request(f'{OLLAMA_BASE_URL}/api/tags', method='GET')
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        models = [m['name'].split(':')[0] for m in data.get('models', [])]
+        model_base = model.split(':')[0]
+        return {
+            'running': True,
+            'model_available': model_base in models,
+            'available_models': models,
+        }
+    except Exception:
+        return {'running': False, 'model_available': False, 'available_models': []}
+
+
 def process_notification(
     parsed: dict,
     export_items: str,
     terminology: dict,
     api_key: str = None,
+    llm_backend: str = 'ollama',
+    ollama_model: str = MODEL_OLLAMA_DEFAULT,
 ) -> dict:
     """
-    Send the parsed notification to Claude for translation, classification,
-    and summary generation.
+    Translate, classify, and summarize a parsed WTO SPS notification.
 
-    Returns a dict with Korean fields + recommendations + flags.
+    llm_backend: 'ollama' (local, no key) or 'anthropic' (cloud, needs key)
     """
-    key = api_key or os.environ.get('ANTHROPIC_API_KEY', '')
-    if not key:
-        raise ValueError('ANTHROPIC_API_KEY가 설정되지 않았습니다.')
-
-    client = anthropic.Anthropic(api_key=key)
-    user_prompt = _build_user_prompt(parsed, export_items, terminology)
-
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[{'role': 'user', 'content': user_prompt}],
-    )
-
-    raw = message.content[0].text.strip()
-
-    # Extract JSON from the response
-    json_match = None
-    if raw.startswith('{'):
-        json_match = raw
+    if llm_backend == 'anthropic':
+        return _process_with_anthropic(parsed, export_items, terminology, api_key)
     else:
-        import re
-        m = re.search(r'\{.*\}', raw, re.DOTALL)
-        if m:
-            json_match = m.group()
-
-    if not json_match:
-        raise ValueError(f'LLM 응답에서 JSON을 찾을 수 없습니다: {raw[:200]}')
-
-    result = json.loads(json_match)
-    return result
+        return _process_with_ollama(parsed, export_items, terminology, ollama_model)

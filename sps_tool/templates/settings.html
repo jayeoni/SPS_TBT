@@ -13,15 +13,15 @@ body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #f
 }
 .topbar h1 { font-size: 17px; font-weight: 600; }
 .topbar a { color: #aed6f1; text-decoration: none; font-size: 13px; }
-.container { max-width: 640px; margin: 36px auto; padding: 0 20px; }
+.container { max-width: 660px; margin: 36px auto; padding: 0 20px; }
 .card {
   background: white; border-radius: 10px; padding: 28px 32px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 20px;
 }
 .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 22px; color: #1a5276; border-bottom: 1px solid #eee; padding-bottom: 12px; }
 .form-group { margin-bottom: 20px; }
 .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #444; }
-.form-group small { display: block; font-size: 11px; color: #888; margin-top: 4px; line-height: 1.5; }
+.form-group small { display: block; font-size: 11px; color: #888; margin-top: 4px; line-height: 1.6; }
 .form-group input[type=text], .form-group input[type=password] {
   width: 100%;
   padding: 9px 12px;
@@ -32,6 +32,17 @@ body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #f
   color: #333;
 }
 .form-group input:focus { outline: none; border-color: #1a5276; box-shadow: 0 0 0 2px #d6eaf8; }
+.radio-group { display: flex; gap: 16px; margin-top: 6px; flex-wrap: wrap; }
+.radio-label {
+  font-weight: 400;
+  display: flex; align-items: center; gap: 7px;
+  cursor: pointer; font-size: 13px;
+  padding: 8px 16px;
+  border: 1px solid #ddd; border-radius: 6px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.radio-label.selected { border-color: #1a5276; background: #eaf4fb; }
+.radio-label input[type=radio] { accent-color: #1a5276; }
 .btn-row { margin-top: 24px; display: flex; gap: 10px; }
 .btn { padding: 10px 26px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .btn-primary { background: #1a5276; color: white; }
@@ -43,10 +54,22 @@ body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #f
   border-radius: 6px; padding: 10px 16px; margin-bottom: 20px;
   font-size: 13px; color: #1e8449; font-weight: 600;
 }
-.section-note {
-  background: #fef9e7; border-left: 3px solid #f39c12;
-  padding: 10px 14px; margin-bottom: 20px; font-size: 12px; line-height: 1.6; color: #555;
+.info-box {
+  background: #eaf4fb; border-left: 3px solid #1a5276;
+  padding: 10px 14px; font-size: 12px; line-height: 1.8; color: #333;
+  border-radius: 0 4px 4px 0; margin-top: 10px;
 }
+.info-box code {
+  background: #d4e6f1; padding: 1px 5px; border-radius: 3px;
+  font-family: 'Consolas', monospace; font-size: 11px;
+}
+.ollama-status { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; flex-shrink: 0; transition: background 0.3s; }
+.status-dot.green  { background: #2ecc71; }
+.status-dot.red    { background: #e74c3c; }
+.status-dot.yellow { background: #f39c12; }
+.divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+.section-title { font-size: 15px; font-weight: 600; margin-bottom: 18px; color: #1a5276; }
 </style>
 </head>
 <body>
@@ -63,21 +86,68 @@ body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #f
   {% endif %}
 
   <div class="card">
-    <h2>API 및 파일 경로 설정</h2>
+    <h2>LLM 번역·분류 엔진</h2>
 
-    <div class="section-note">
-      설정은 <code>.env</code> 파일에 저장됩니다. API 키는 Anthropic Console에서 발급받으세요.
-    </div>
+    <form method="POST" id="settings-form">
 
-    <form method="POST">
-
+      <!-- ── Backend selector ── -->
       <div class="form-group">
-        <label>🔑 Anthropic API 키</label>
-        <input type="password" name="api_key"
-               value="{{ config.api_key if config.api_key else '' }}"
-               placeholder="sk-ant-...">
-        <small>claude.ai → 계정 → API Keys에서 발급. .env 파일에 저장됩니다.</small>
+        <label>엔진 선택</label>
+        <div class="radio-group" id="backend-radio-group">
+          <label class="radio-label" id="label-ollama">
+            <input type="radio" name="llm_backend" value="ollama"
+                   {{ 'checked' if config.llm_backend != 'anthropic' else '' }}>
+            🦙 Ollama (로컬, 무료)
+          </label>
+          <label class="radio-label" id="label-anthropic">
+            <input type="radio" name="llm_backend" value="anthropic"
+                   {{ 'checked' if config.llm_backend == 'anthropic' else '' }}>
+            ☁ Anthropic Claude (API 키)
+          </label>
+        </div>
+        <small>Ollama: PC에서 로컬 실행, 무료 &nbsp;|&nbsp; Anthropic: 클라우드, 번역 품질 더 높음</small>
       </div>
+
+      <!-- ── Ollama settings ── -->
+      <div id="ollama-section">
+        <div class="form-group">
+          <label>🦙 Ollama 모델</label>
+          <input type="text" name="ollama_model" id="ollama-model-input"
+                 value="{{ config.ollama_model or 'qwen2.5:7b' }}"
+                 placeholder="qwen2.5:7b">
+          <div class="ollama-status">
+            <span class="status-dot" id="ollama-dot"></span>
+            <span id="ollama-status-text">상태 확인 중...</span>
+          </div>
+          <div class="info-box">
+            <strong>Ollama 설치 방법 (최초 1회)</strong><br>
+            1. <a href="https://ollama.com" target="_blank">https://ollama.com</a> 에서 Ollama 설치 (Windows 지원)<br>
+            2. 설치 후 cmd에서 모델 다운로드: <code>ollama pull qwen2.5:7b</code><br>
+            3. Ollama는 백그라운드에서 자동으로 실행됩니다<br><br>
+            <strong>추천 모델 (한국어 번역 품질순)</strong><br>
+            &bull; <code>qwen2.5:7b</code> — 기본값, 4.7GB, 한국어 최우수<br>
+            &bull; <code>qwen2.5:14b</code> — 더 높은 품질, 9GB<br>
+            &bull; <code>gemma3:12b</code> — Google 모델, 8GB
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Anthropic settings ── -->
+      <div id="anthropic-section" style="display:none">
+        <div class="form-group">
+          <label>🔑 Anthropic API 키</label>
+          <input type="password" name="api_key"
+                 value="{{ config.api_key if config.api_key else '' }}"
+                 placeholder="sk-ant-...">
+          <small>
+            <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>
+            → API Keys에서 발급. .env 파일에 저장됩니다.
+          </small>
+        </div>
+      </div>
+
+      <hr class="divider">
+      <p class="section-title">파일 경로</p>
 
       <div class="form-group">
         <label>📊 Excel 파일 경로 (SPS 통보문 내역)</label>
@@ -112,5 +182,52 @@ body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #f
   </div>
 
 </div>
+
+<script>
+function syncRadioStyles() {
+  const isAnthropic = document.querySelector('input[name=llm_backend][value=anthropic]').checked;
+  document.getElementById('label-ollama').classList.toggle('selected', !isAnthropic);
+  document.getElementById('label-anthropic').classList.toggle('selected', isAnthropic);
+  document.getElementById('anthropic-section').style.display = isAnthropic ? 'block' : 'none';
+  document.getElementById('ollama-section').style.display = isAnthropic ? 'none' : 'block';
+}
+
+async function checkOllamaStatus() {
+  const dot  = document.getElementById('ollama-dot');
+  const text = document.getElementById('ollama-status-text');
+  text.textContent = '상태 확인 중...';
+  dot.className = 'status-dot';
+  try {
+    const resp = await fetch('/ollama-status');
+    const data = await resp.json();
+    if (!data.running) {
+      dot.className = 'status-dot red';
+      text.textContent = 'Ollama가 실행되지 않음 — 설치 후 다시 확인';
+    } else if (!data.model_available) {
+      const model = document.getElementById('ollama-model-input').value || 'qwen2.5:7b';
+      dot.className = 'status-dot yellow';
+      text.textContent = `Ollama 실행 중 — 모델 미설치. cmd에서: ollama pull ${model}`;
+    } else {
+      dot.className = 'status-dot green';
+      text.textContent = 'Ollama 실행 중, 모델 사용 가능 ✓';
+    }
+  } catch {
+    dot.className = 'status-dot red';
+    text.textContent = '상태 확인 실패';
+  }
+}
+
+// Init
+syncRadioStyles();
+const initialBackend = document.querySelector('input[name=llm_backend]:checked').value;
+if (initialBackend === 'ollama') checkOllamaStatus();
+
+document.querySelectorAll('input[name=llm_backend]').forEach(r => {
+  r.addEventListener('change', () => {
+    syncRadioStyles();
+    if (r.value === 'ollama') checkOllamaStatus();
+  });
+});
+</script>
 </body>
 </html>

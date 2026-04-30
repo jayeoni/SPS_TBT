@@ -35,7 +35,9 @@ DEFAULT_CONFIG = {
     'excel_path':       os.environ.get('EXCEL_PATH', ''),
     'export_data_path': os.environ.get('EXPORT_DATA_PATH', ''),
     'api_key':          os.environ.get('ANTHROPIC_API_KEY', ''),
-    'target_month':     '',  # e.g. '26.4월'; empty = auto-detect
+    'target_month':     '',      # e.g. '26.4월'; empty = auto-detect
+    'llm_backend':      'ollama',  # 'ollama' (local, free) or 'anthropic'
+    'ollama_model':     'qwen2.5:7b',
 }
 
 
@@ -146,6 +148,8 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
             export_items=export_items,
             terminology=terminology,
             api_key=cfg.get('api_key', ''),
+            llm_backend=cfg.get('llm_backend', 'ollama'),
+            ollama_model=cfg.get('ollama_model', 'qwen2.5:7b'),
         )
 
         result['title_kr']  = llm_result.get('제목', '')
@@ -248,7 +252,7 @@ def index():
     cfg = load_config()
     ensure_export_loaded(cfg)
     missing = []
-    if not cfg.get('api_key'):
+    if cfg.get('llm_backend', 'ollama') == 'anthropic' and not cfg.get('api_key'):
         missing.append('ANTHROPIC_API_KEY')
     if not cfg.get('excel_path') or not Path(cfg['excel_path']).exists():
         missing.append('Excel 파일 경로')
@@ -303,6 +307,8 @@ def settings():
             'excel_path':       request.form.get('excel_path', '').strip(),
             'export_data_path': request.form.get('export_data_path', '').strip(),
             'target_month':     request.form.get('target_month', '').strip(),
+            'llm_backend':      request.form.get('llm_backend', 'ollama'),
+            'ollama_model':     request.form.get('ollama_model', 'qwen2.5:7b').strip(),
         }
         new_api_key = request.form.get('api_key', '').strip()
 
@@ -337,7 +343,17 @@ def health():
         'api_key_set':    bool(cfg.get('api_key')),
         'excel_exists':   bool(cfg.get('excel_path')) and Path(cfg['excel_path']).exists(),
         'export_loaded':  _export_lookup.is_loaded(),
+        'llm_backend':    cfg.get('llm_backend', 'ollama'),
+        'ollama_model':   cfg.get('ollama_model', 'qwen2.5:7b'),
     })
+
+
+@app.route('/ollama-status')
+def ollama_status():
+    cfg = load_config()
+    model = cfg.get('ollama_model', 'qwen2.5:7b')
+    status = sps_llm.check_ollama_status(model)
+    return jsonify(status)
 
 
 if __name__ == '__main__':
