@@ -118,12 +118,13 @@ body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #f
           <div class="ollama-status">
             <span class="status-dot" id="ollama-dot"></span>
             <span id="ollama-status-text">상태 확인 중...</span>
+            <button type="button" onclick="checkOllamaStatus()" style="margin-left:8px;padding:1px 8px;font-size:11px;border:1px solid #ccc;border-radius:4px;cursor:pointer;background:white">다시 확인</button>
           </div>
           <div class="info-box">
             <strong>Ollama 설치 방법 (최초 1회)</strong><br>
             1. <a href="https://ollama.com" target="_blank">https://ollama.com</a> 에서 Ollama 설치 (Windows 지원)<br>
             2. 설치 후 cmd에서 모델 다운로드: <code>ollama pull qwen2.5:7b</code><br>
-            3. Ollama는 백그라운드에서 자동으로 실행됩니다<br><br>
+            3. 상태가 빨간 점이면: cmd에서 <code>ollama serve</code> 실행 후 이 페이지 새로고침<br><br>
             <strong>추천 모델 (한국어 번역 품질순)</strong><br>
             &bull; <code>qwen2.5:7b</code> — 기본값, 4.7GB, 한국어 최우수<br>
             &bull; <code>qwen2.5:14b</code> — 더 높은 품질, 9GB<br>

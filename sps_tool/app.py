@@ -353,6 +353,7 @@ def ollama_status():
     cfg = load_config()
     model = cfg.get('ollama_model', 'qwen2.5:7b')
     status = sps_llm.check_ollama_status(model)
+    status['model'] = model  # include model name so frontend can display it
     return jsonify(status)
 
 

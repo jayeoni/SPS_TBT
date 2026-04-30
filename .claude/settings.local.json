@@ -12,7 +12,12 @@
       "PowerShell(cd \"C:\\\\Users\\\\mafra\\\\SPS통보문\\\\sps_tool\"; $p = Start-Process -FilePath python -ArgumentList \"app.py\" -PassThru -WindowStyle Hidden; Start-Sleep -Seconds 4; $result = Invoke-RestMethod -Uri \"http://localhost:5000/health\" -Method Get -ErrorAction Stop; Write-Host \"Server OK: api_key_set=$\\($result.api_key_set\\), excel_exists=$\\($result.excel_exists\\)\"; Stop-Process -Id $p.Id -Force)",
       "PowerShell(cd \"C:\\\\Users\\\\mafra\\\\SPS통보문\\\\sps_tool\"; $p = Start-Process -FilePath python -ArgumentList \"app.py\" -PassThru -WindowStyle Hidden; Start-Sleep -Seconds 4; $result = Invoke-RestMethod -Uri \"http://localhost:5000/health\" -Method Get -ErrorAction Stop; Write-Host \"Server OK: api_key_set=$\\($result.api_key_set\\), excel_exists=$\\($result.excel_exists\\), export_loaded=$\\($result.export_loaded\\)\"; Stop-Process -Id $p.Id -Force)",
       "PowerShell(Write-Host \"EXCEL_PATH: '$env:EXCEL_PATH'\"; Write-Host \"EXPORT_DATA_PATH: '$env:EXPORT_DATA_PATH'\")",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(taskkill /PID 1188 /F)",
+      "Bash(taskkill /PID 8880 /F)",
+      "Bash(netstat -ano)",
+      "Bash(cmd /c \"taskkill /PID 1188 /F && taskkill /PID 8880 /F\")",
+      "Bash(cmd /c \"netstat -ano | findstr :5000\")"
     ]
   }
 }
