@@ -110,22 +110,39 @@ def _match_label(cell_text, patterns):
 
 def _extract_field_from_tables(doc, label_patterns):
     """
-    Find the first table row where a cell matches any label pattern,
-    and return the text of the LAST cell in that row as the field value.
-    Handles both 2-column and 3-column tables.
+    Find the content for a field by its label patterns.
+
+    Layout A (WTO standard): ['1.', 'Label: content...']
+      The label is embedded at the start of the last cell.
+      Extract everything after the first colon.
+
+    Layout B (older format): ['Label cell', 'Content cell']
+      The label is in a dedicated earlier cell; return the last cell.
     """
     for table in doc.tables:
         for row in table.rows:
             cells = _unique_cells(row)
             if len(cells) < 2:
                 continue
-            # Check all cells except the last one for labels
-            for i, cell in enumerate(cells[:-1]):
+
+            content_cell = cells[-1]
+            content_text = _cell_text(content_cell)
+            if not content_text:
+                continue
+
+            # Layout A: label at the start of the content cell (first line)
+            first_line = content_text.split('\n')[0][:150]
+            if _match_label(first_line, label_patterns):
+                colon_pos = content_text.find(':')
+                if colon_pos != -1:
+                    return content_text[colon_pos + 1:].strip()
+                return content_text
+
+            # Layout B: label is in a dedicated earlier cell
+            for cell in cells[:-1]:
                 if _match_label(_cell_text(cell), label_patterns):
-                    content = _cell_text(cells[-1])
-                    # Skip if content looks like another label
-                    if content and len(content) > 1 and content != _cell_text(cell):
-                        return content
+                    if content_text and len(content_text) > 1 and content_text != _cell_text(cell):
+                        return content_text
     return ''
 
 
@@ -164,7 +181,7 @@ def _extract_regions(doc):
 
     # Look for specific regions checked
     specific_match = re.search(
-        r'\[x\].*?specific regions?\s*[:/]?\s*([^\n\[]+)',
+        r'\[x\][^\n]*?specific regions?(?:\s+or\s+countries?)?\s*:\s*([^\n\[]+)',
         all_text, re.IGNORECASE
     )
     if specific_match:

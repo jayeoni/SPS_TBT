@@ -120,10 +120,10 @@ def write_fields(
     is_non_english: bool = False,
 ):
     """
-    Write all computed fields to the matched Excel row.
+    Write computed fields to the matched Excel row.
+    - Skips individual cells that already have a non-empty value (Korean already entered).
     - Applies yellow fill to uncertain fields.
     - Applies lime fill to 제목 and 내용 if source is non-English.
-    - Does NOT overwrite cells that already have a value (except empty string/None).
     """
     for field_name in WRITABLE_FIELDS:
         if field_name not in fields:
@@ -134,8 +134,8 @@ def write_fields(
 
         cell = ws.cell(row=row_idx, column=col_idx)
 
-        # Don't overwrite existing non-empty values for date fields
-        if field_name in ('의견마감일', '발효일') and cell.value not in (None, '', '-'):
+        # Skip cells that already have a non-empty value
+        if cell.value not in (None, ''):
             continue
 
         value = fields[field_name]
@@ -154,7 +154,10 @@ def write_fields(
     # Write reviewer notes to column 20 if there are flags
     if uncertain_fields:
         note_cell = ws.cell(row=row_idx, column=COL['검토메모'])
-        note_cell.value = '검토 필요: ' + ', '.join(uncertain_fields)
+        if note_cell.value in (None, ''):
+            note_cell.value = '검토 필요: ' + ', '.join(uncertain_fields)
+
+    return True
 
 
 def load_and_process(excel_path: str, doc_number: str, fields: dict,

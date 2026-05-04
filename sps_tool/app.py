@@ -2,6 +2,10 @@
 SPS Notification Processing Tool — Flask web application.
 Run via start.bat; opens at http://localhost:5000
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent))
+
 import os
 import json
 import logging
@@ -218,12 +222,8 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
                 result['excel_updated'] = True
                 result['row_idx'] = row_idx
             else:
-                # Not finding the row is a warning, not an error — still proceed
-                if '찾을 수 없습니다' in err:
-                    result['skipped'] = True
-                    result['error'] = err
-                else:
-                    result['error'] = f'Excel 오류: {err}'
+                # Row not found in Excel — warn but still produce the Word file
+                result['error'] = err
         else:
             result['error'] = 'Excel 파일 경로가 설정되지 않았습니다. 설정(Settings)을 확인해주세요.'
 

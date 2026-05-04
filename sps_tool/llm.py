@@ -58,6 +58,7 @@ ADDENDUM INFO:
 DOCUMENT: {parsed.get('doc_number', '')}
 TYPE: {notif_type_str}
 NOTIFYING COUNTRY: {parsed.get('notifying_member', '')}
+AGENCY RESPONSIBLE: {parsed.get('agency', '')}
 SOURCE LANGUAGE: {parsed.get('source_language', 'en')}{addendum_info}
 
 --- EXTRACTED FIELDS ---
@@ -127,9 +128,10 @@ Return ONLY this JSON object (no other text):
   "제목": "Korean title (include scientific name as 국문명(학명) if present)",
   "내용": "Korean content summary in 개조식, 2-3 sentences",
   "해당품목": "Korean product name with 학명 if applicable",
-  "목적": "Korean purpose phrase(s), semicolons between multiples. Use ONLY: 식품안전/동물위생/식물보호/동식물 병해충 또는 질병으로부터 사람 보호/해충으로 인한 피해로부터 영토 보호",
+  "목적": "Korean purpose phrase(s), semicolons between multiples. Use ONLY these exact phrases: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호",
   "해당국가": "Korean country name or '모든 교역국'",
   "통보국_kr": "Korean name of the notifying member country",
+  "담당기관_kr": "Korean name of the agency responsible; keep original acronym in parentheses if present (e.g. 동식물위생관리규제청(AGROCALIDAD))",
   "주간보고": "Single-line 개조식 Korean summary of what this notification does",
   "구분": "동물 or 식물 or 식품",
   "구분_reason": "1-sentence reasoning",
