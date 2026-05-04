@@ -1,5 +1,7 @@
 {
-  "excel_path": "C:\\Users\\mafra\\SPS통보문\\260428 SPS 통보문 내역(4월 4주).xlsx",
+  "excel_path": "C:\\Users\\mafra\\SPS통보문\\260504 SPS 통보문 내역(4월 5주).xlsx",
   "export_data_path": "C:\\Users\\mafra\\SPS통보문\\2025_연간 전체실적_전체.xlsx",
-  "target_month": "26.4월"
+  "target_month": "26.5월",
+  "llm_backend": "ollama",
+  "ollama_model": "qwen2.5:7b"
 }
