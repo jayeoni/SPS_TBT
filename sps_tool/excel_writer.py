@@ -3,6 +3,7 @@ Excel row matching and cell writing for the SPS notification tracking workbook.
 Finds the pre-populated row by 문서번호 and fills in all computed/LLM fields.
 """
 import re
+import shutil
 from datetime import date, datetime
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font
@@ -169,12 +170,22 @@ def load_and_process(excel_path: str, doc_number: str, fields: dict,
     Returns (success: bool, error_msg: str, row_idx: int|None)
     """
     try:
+        # Rolling backup — overwritten each run so it does not accumulate
+        shutil.copy2(excel_path, excel_path + '.sps_bak')
+
         wb = load_workbook(excel_path)
         ws, row_idx, base_date = find_row(wb, doc_number, target_month)
         if ws is None or row_idx is None:
             return False, f'문서번호 {doc_number}을(를) Excel에서 찾을 수 없습니다.', None
 
+        # Record row count before writing — must not change
+        row_count_before = ws.max_row
+
         write_fields(ws, row_idx, fields, uncertain_fields, is_non_english)
+
+        if ws.max_row != row_count_before:
+            return False, 'Excel 행 수가 변경되어 저장을 중단했습니다. 백업 파일(.sps_bak)을 확인하세요.', None
+
         wb.save(excel_path)
         return True, '', row_idx
 

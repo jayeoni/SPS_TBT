@@ -254,9 +254,14 @@ def _row_title(cell_text, t):
     if not title_kr:
         return []
 
-    lang_m = re.search(r'Language\(s\):\s*(\w+)', cell_text, re.IGNORECASE)
-    lang_en = lang_m.group(1).lower() if lang_m else ''
-    lang_kr = LANG_KR.get(lang_en, lang_en)
+    lang_m = re.search(r'Language\(s\):\s*([^\n]+)', cell_text, re.IGNORECASE)
+    lang_raw = lang_m.group(1).strip() if lang_m else ''
+    if lang_raw:
+        parts = re.split(r'\s+and\s+|\s*,\s*|\s*&\s*', lang_raw, flags=re.IGNORECASE)
+        kr_parts = [LANG_KR.get(p.strip().lower(), p.strip()) for p in parts if p.strip()]
+        lang_kr = ' 및 '.join(kr_parts)
+    else:
+        lang_kr = ''
 
     pages_m = re.search(r'Number of pages:\s*(\S+)', cell_text, re.IGNORECASE)
     pages = pages_m.group(1) if pages_m else ''
@@ -392,6 +397,37 @@ ROW_BUILDERS = {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+_TITLE_KR = {
+    'NOTIFICATION OF EMERGENCY MEASURES': '긴급조치 통보문',
+    'NOTIFICATION': '통보문',
+}
+
+
+def _translate_doc_titles(doc):
+    """
+    Find the NOTIFICATION / NOTIFICATION OF EMERGENCY MEASURES paragraph and
+    append the Korean translation on a new line within the same paragraph.
+    """
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        kr = _TITLE_KR.get(text.upper(), '')
+        if not kr:
+            continue
+        font_size = None
+        for run in para.runs:
+            if run.font.size:
+                font_size = run.font.size
+                break
+        # Add a line break then the Korean title as a new run
+        run_br = para.add_run()
+        br_el = OxmlElement('w:br')
+        run_br._r.append(br_el)
+        run_kr = para.add_run(kr)
+        _apply_korean_font(run_kr)
+        if font_size:
+            run_kr.font.size = font_size
+
+
 def _detect_row_type(text: str):
     prefix = text[:150].lower()
     for row_type, patterns in ROW_PATTERNS.items():
@@ -414,6 +450,8 @@ def create_bilingual_docx(
     shutil.copy2(source_path, output_path)
 
     doc = Document(str(output_path))
+
+    _translate_doc_titles(doc)
 
     for table in doc.tables:
         for row in table.rows:
