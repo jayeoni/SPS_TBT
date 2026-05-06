@@ -41,6 +41,12 @@ ROW_PATTERNS = {
     'entry_force':      ['proposed date of entry into force'],
     'comments':         ['final date for comments'],
     'texts_available':  ['text(s) available from', 'texts available from'],
+    # Addendum-specific rows
+    'addendum_intro':           ['the following communication', 'being circulated at the request'],
+    'addendum_country_advises': ['hereby advises'],
+    'addendum_concerns':        ['this addendum concerns'],
+    'addendum_comment_period_sec': ['comment period:'],
+    'addendum_agency_comments': ['agency or authority designated to handle comments'],
 }
 
 OBJECTIVE_OPTIONS = [
@@ -378,6 +384,53 @@ def _row_texts_available(cell_text, t):
     ]
 
 
+def _row_addendum_intro(cell_text, t):
+    date_m = re.search(r'received on\s+(\d{1,2}\s+\w+\s+\d{4})', cell_text, re.IGNORECASE)
+    date_kr = _translate_date(date_m.group(1)) if date_m else ''
+    country_kr = t.get('통보국_kr', '')
+    if date_kr and country_kr:
+        return [f'{date_kr}에 수신한 다음 전문은 {country_kr} 대표단의 요청에 따라 회람됨.']
+    if country_kr:
+        return [f'다음 전문은 {country_kr} 대표단의 요청에 따라 회람됨.']
+    return []
+
+
+def _row_addendum_country_advises(cell_text, t):
+    content_kr = t.get('내용', '')
+    if not content_kr:
+        return []
+    return [content_kr]
+
+
+def _row_addendum_concerns(cell_text, t):
+    lines = ['본 추가사항은 다음 내용에 관련된 것임:']
+    for eng_prefix, kr_label in ADDENDUM_CONCERN_OPTIONS:
+        cb = _checkbox(cell_text, eng_prefix)
+        lines.append(f'{cb}    {kr_label}')
+    return lines
+
+
+def _row_addendum_comment_period_sec(cell_text, t):
+    sixty_cb = _checkbox(cell_text, 'Sixty days')
+    if re.search(r'not applicable', cell_text, re.IGNORECASE):
+        date_kr = '해당 없음'
+    else:
+        m = re.search(r'and/or\s*\(dd/mm/yy\):\s*(.+?)(?:\n|$)', cell_text, re.IGNORECASE)
+        date_kr = _translate_date_phrase(m.group(1).strip()) if m else ''
+    return [
+        '의견수렴기간(Comment period): (만약 해당 추가사항이(the addendum) 사전에 통보된 조치와 관련된 제품과/또는 잠재적으로 영향받는 회원국의 범위를 확장하는 경우, 의견수렴(receipt of comments)을 위해 일반적으로 최소 60일의 새로운 기한을 제시해야 한다. 최초로 공표했던 최종 의견수렴 날짜를 확장하는 경우와 같은 다른 상황 하에서는, 추가사항(the addendum)에 제시된 날짜와 달라질 수 있다.)',
+        f'{sixty_cb}  통보 추가사항(Addendum)의 배포 날짜로부터 60일 그리고/또는 [날짜(일/월/년)]: {date_kr}',
+    ]
+
+
+def _row_addendum_agency_comments(cell_text, t):
+    nna_cb = _checkbox(cell_text, 'National Notification Authority')
+    neq_cb = _checkbox(cell_text, 'National Enquiry Point')
+    return [
+        f'의견 처리 담당기관 또는 관계당국: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소:',
+    ]
+
+
 ROW_BUILDERS = {
     'notifying_member': _row_notifying_member,
     'agency':           _row_agency,
@@ -392,6 +445,12 @@ ROW_BUILDERS = {
     'entry_force':      _row_entry_force,
     'comments':         _row_comments,
     'texts_available':  _row_texts_available,
+    # Addendum-specific
+    'addendum_intro':              _row_addendum_intro,
+    'addendum_country_advises':    _row_addendum_country_advises,
+    'addendum_concerns':           _row_addendum_concerns,
+    'addendum_comment_period_sec': _row_addendum_comment_period_sec,
+    'addendum_agency_comments':    _row_addendum_agency_comments,
 }
 
 
@@ -400,13 +459,23 @@ ROW_BUILDERS = {
 _TITLE_KR = {
     'NOTIFICATION OF EMERGENCY MEASURES': '긴급조치 통보문',
     'NOTIFICATION': '통보문',
+    'ADDENDUM': '추가',
 }
+
+ADDENDUM_CONCERN_OPTIONS = [
+    ('Modification of final date for comments', '의견수렴(comment)을 위한 최종 날짜 변경'),
+    ('Notification of adoption',                '규제의 채택, 공표 또는 발효의 통보'),
+    ('Modification of content',                 '기존 통보된 규제 초안의 내용과/또는 범위의 변경'),
+    ('Withdrawal of proposed regulation',       '규제(안)의 철회'),
+    ('Change in proposed date',                 '채택, 공표 또는 발효 예정일 변경'),
+    ('Other',                                   '기타'),
+]
 
 
 def _translate_doc_titles(doc):
     """
-    Find the NOTIFICATION / NOTIFICATION OF EMERGENCY MEASURES paragraph and
-    append the Korean translation on a new line within the same paragraph.
+    Find the NOTIFICATION / ADDENDUM paragraphs and append Korean translations.
+    Checks both top-level paragraphs (standard docs) and table cells (addendum docs).
     """
     for para in doc.paragraphs:
         text = para.text.strip()
@@ -418,7 +487,6 @@ def _translate_doc_titles(doc):
             if run.font.size:
                 font_size = run.font.size
                 break
-        # Add a line break then the Korean title as a new run
         run_br = para.add_run()
         br_el = OxmlElement('w:br')
         run_br._r.append(br_el)
@@ -426,6 +494,17 @@ def _translate_doc_titles(doc):
         _apply_korean_font(run_kr)
         if font_size:
             run_kr.font.size = font_size
+
+    # Also check table cells (addendum docs have no top-level paragraphs)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in _unique_cells(row):
+                cell_text = cell.text.strip()
+                kr = _TITLE_KR.get(cell_text.upper(), '')
+                if not kr:
+                    continue
+                font_size = _get_cell_font_size(cell)
+                _add_paragraph(cell, kr, font_size)
 
 
 def _detect_row_type(text: str):
@@ -436,10 +515,37 @@ def _detect_row_type(text: str):
     return None
 
 
+def _translate_addendum_reg_title(doc, translations):
+    """
+    For addendum docs: inject the Korean regulation title into the cell that
+    follows the '___' separator line (positional, since the cell has no label).
+    """
+    title_kr = translations.get('제목', '')
+    if not title_kr:
+        return
+
+    for table in doc.tables:
+        cells_flat = []
+        for row in table.rows:
+            for cell in _unique_cells(row):
+                cells_flat.append(cell)
+
+        for i, cell in enumerate(cells_flat):
+            if re.match(r'^_+$', cell.text.strip()):
+                for j in range(i + 1, min(i + 4, len(cells_flat))):
+                    candidate = cells_flat[j]
+                    ctext = candidate.text.strip()
+                    if ctext and not _detect_row_type(ctext):
+                        font_size = _get_cell_font_size(candidate)
+                        _add_paragraph(candidate, title_kr, font_size)
+                        return
+
+
 def create_bilingual_docx(
     source_path: str,
     translations: dict,
     is_non_english: bool = False,
+    is_addendum: bool = False,
 ) -> str:
     """
     Create a bilingual Word file by appending Korean translations to each
@@ -456,7 +562,7 @@ def create_bilingual_docx(
     for table in doc.tables:
         for row in table.rows:
             cells = _unique_cells(row)
-            if len(cells) < 2:
+            if len(cells) < 1:
                 continue
 
             content_cell = cells[-1]
@@ -483,6 +589,9 @@ def create_bilingual_docx(
 
             if is_non_english and row_type in ('title', 'description'):
                 _set_cell_bg(content_cell, LIME_RGB)
+
+    if is_addendum:
+        _translate_addendum_reg_title(doc, translations)
 
     doc.save(str(output_path))
     return str(output_path)

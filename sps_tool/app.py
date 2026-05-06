@@ -233,6 +233,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
             source_path=docx_path,
             translations={**llm_result, '통보국_kr': llm_result.get('통보국_kr', '')},
             is_non_english=is_non_english,
+            is_addendum=parsed['is_addendum'],
         )
         result['word_file'] = Path(output_word).name
 

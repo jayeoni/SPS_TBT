@@ -222,6 +222,8 @@ def _extract_addendum_fields(doc, full_text):
         'addendum_country': '',
         'addendum_received_date': '',
         'addendum_content': '',
+        'addendum_reg_title': '',
+        'addendum_country_advises': '',
     }
 
     # Extract circulation country from opening sentence
@@ -239,6 +241,20 @@ def _extract_addendum_fields(doc, full_text):
     )
     if m2:
         result['addendum_received_date'] = m2.group(1).strip()
+
+    # Extract regulation title and country advises paragraph from body
+    sep_pos = full_text.find('___')
+    if sep_pos != -1:
+        after_sep = full_text[sep_pos:].lstrip('_').lstrip()
+        lines = [l.strip() for l in after_sep.split('\n') if l.strip()]
+        if lines:
+            result['addendum_reg_title'] = lines[0]
+        advises_m = re.search(
+            r'\w[\w\s]+ hereby advises.+?(?=\n\s*\n|\Z)',
+            after_sep, re.DOTALL | re.IGNORECASE,
+        )
+        if advises_m:
+            result['addendum_country_advises'] = advises_m.group().strip()
 
     # Find checked addendum type boxes
     addendum_types = {
@@ -326,5 +342,10 @@ def parse_notification(docx_path: str) -> dict:
     # ── Addendum-specific fields ──────────────────────────────────────────
     if result['is_addendum']:
         result['addendum'] = _extract_addendum_fields(doc, full_text)
+        body = result['addendum']
+        if body.get('addendum_reg_title') and not result['title']:
+            result['title'] = body['addendum_reg_title']
+        if body.get('addendum_country_advises') and not result['description']:
+            result['description'] = body['addendum_country_advises']
 
     return result
