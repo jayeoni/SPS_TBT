@@ -208,7 +208,7 @@ def _process_with_ollama(parsed: dict, export_items: str, terminology: dict, mod
             {'role': 'user', 'content': user_prompt},
         ],
         'stream': False,
-        'options': {'temperature': 0.1, 'num_predict': 2048},
+        'options': {'temperature': 0.1, 'num_predict': 4096},
     }).encode('utf-8')
 
     req = urllib.request.Request(

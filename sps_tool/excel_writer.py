@@ -47,6 +47,24 @@ WRITABLE_FIELDS = [
 ]
 
 
+def _detect_col_map(ws) -> dict:
+    """
+    Read the header row to detect actual column positions.
+    Returns COL-compatible dict; falls back to hardcoded COL if headers not found.
+    """
+    detected = {}
+    for cell in ws[1]:
+        if cell.value is None:
+            continue
+        name = str(cell.value).strip()
+        if name in COL:
+            detected[name] = cell.column
+    # Use detected mapping if at least half the expected columns were found
+    if len(detected) >= len(COL) // 2:
+        return {**COL, **detected}
+    return dict(COL)
+
+
 def _get_month_sheet(wb, target_month: str = None):
     """
     Return the correct month sheet from the workbook.
@@ -83,16 +101,18 @@ def find_row(wb, doc_number: str, target_month: str = None):
     """
     Find the Excel row matching the given document number.
 
-    Returns (worksheet, row_index, base_date) or (None, None, None) if not found.
+    Returns (worksheet, row_index, base_date, col_map) or (None, None, None, COL).
     base_date is the 배포일 from the matched row (used for date calculations).
+    col_map is the detected column-name→index mapping for this sheet.
     """
     ws = _get_month_sheet(wb, target_month)
     if ws is None:
-        return None, None, None
+        return None, None, None, dict(COL)
 
+    col_map = _detect_col_map(ws)
     needle = _normalize_doc_number(doc_number)
-    doc_col = COL['문서번호']
-    date_col = COL['배포일']
+    doc_col = col_map['문서번호']
+    date_col = col_map['배포일']
 
     for row in ws.iter_rows(min_row=2):
         cell = row[doc_col - 1]
@@ -108,9 +128,9 @@ def find_row(wb, doc_number: str, target_month: str = None):
             if date_cell.value:
                 from date_engine import parse_excel_date
                 base_date = parse_excel_date(date_cell.value)
-            return ws, cell.row, base_date
+            return ws, cell.row, base_date, col_map
 
-    return None, None, None
+    return None, None, None, col_map
 
 
 def write_fields(
@@ -119,6 +139,7 @@ def write_fields(
     fields: dict,
     uncertain_fields: list,
     is_non_english: bool = False,
+    col_map: dict = None,
 ):
     """
     Write computed fields to the matched Excel row.
@@ -126,10 +147,12 @@ def write_fields(
     - Applies yellow fill to uncertain fields.
     - Applies lime fill to 제목 and 내용 if source is non-English.
     """
+    if col_map is None:
+        col_map = COL
     for field_name in WRITABLE_FIELDS:
         if field_name not in fields:
             continue
-        col_idx = COL.get(field_name)
+        col_idx = col_map.get(field_name)
         if col_idx is None:
             continue
 
@@ -154,9 +177,11 @@ def write_fields(
 
     # Write reviewer notes to column 20 if there are flags
     if uncertain_fields:
-        note_cell = ws.cell(row=row_idx, column=COL['검토메모'])
-        if note_cell.value in (None, ''):
-            note_cell.value = '검토 필요: ' + ', '.join(uncertain_fields)
+        memo_col = col_map.get('검토메모', COL.get('검토메모'))
+        if memo_col:
+            note_cell = ws.cell(row=row_idx, column=memo_col)
+            if note_cell.value in (None, ''):
+                note_cell.value = '검토 필요: ' + ', '.join(uncertain_fields)
 
     return True
 
@@ -174,14 +199,14 @@ def load_and_process(excel_path: str, doc_number: str, fields: dict,
         shutil.copy2(excel_path, excel_path + '.sps_bak')
 
         wb = load_workbook(excel_path)
-        ws, row_idx, base_date = find_row(wb, doc_number, target_month)
+        ws, row_idx, base_date, col_map = find_row(wb, doc_number, target_month)
         if ws is None or row_idx is None:
             return False, f'문서번호 {doc_number}을(를) Excel에서 찾을 수 없습니다.', None
 
         # Record row count before writing — must not change
         row_count_before = ws.max_row
 
-        write_fields(ws, row_idx, fields, uncertain_fields, is_non_english)
+        write_fields(ws, row_idx, fields, uncertain_fields, is_non_english, col_map)
 
         if ws.max_row != row_count_before:
             return False, 'Excel 행 수가 변경되어 저장을 중단했습니다. 백업 파일(.sps_bak)을 확인하세요.', None
@@ -199,7 +224,7 @@ def get_base_date(excel_path: str, doc_number: str, target_month: str = None):
     """Get only the 배포일 for a given document number (for date calculations)."""
     try:
         wb = load_workbook(excel_path, read_only=True, data_only=True)
-        _, _, base_date = find_row(wb, doc_number, target_month)
+        _, _, base_date, _ = find_row(wb, doc_number, target_month)
         return base_date
     except Exception:
         return None
