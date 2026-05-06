@@ -6,3 +6,20 @@ __pycache__/
 .env
 .DS_Store
 .vscode/
+
+# Local config with machine-specific paths
+sps_tool/config.json
+
+# Data files (source documents and working Excel files)
+*.docx
+*.xlsx
+*.xls
+
+# Temp/download artifacts
+*.zip.tmp
+
+# Local state markers
+.deps_installed
+
+# Claude Code local settings (machine-specific permissions)
+.claude/
