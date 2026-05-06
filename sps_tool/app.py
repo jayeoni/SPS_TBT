@@ -26,6 +26,7 @@ import date_engine
 import export_lookup as exp_lookup
 import excel_writer
 import word_writer
+import dept_lookup
 
 # ── App setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -133,15 +134,16 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
                 excel_path, result['doc_number'], cfg.get('target_month')
             )
 
-        # ── 3. Export item lookup ──────────────────────────────────────────
-        is_all_partners = '모든 교역국' in parsed.get('regions', '') or \
-                          'all trading partners' in parsed.get('regions', '').lower()
-        export_items, export_uncertain = _export_lookup.lookup(
-            notifying_country=parsed.get('notifying_member', ''),
-            product_text=parsed.get('products', '') + ' ' + parsed.get('description', ''),
-            is_all_partners=is_all_partners,
-            category='',
-        ) if _export_lookup.is_loaded() else ('-', False)
+        # ── 3. Translate regions to Korean & determine export item logic ──────
+        regions_raw = parsed.get('regions', '')
+        regions_kr = dept_lookup.translate_regions(regions_raw)
+        parsed['regions_kr'] = regions_kr
+
+        is_all_partners = regions_kr == '모든 교역국'
+        is_korea_targeted = '한국' in regions_kr and not is_all_partners
+
+        # export_items determined after LLM (needs 해당품목 for Korea-targeted case)
+        export_items, export_uncertain = '-', False
 
         # ── 4. LLM processing ──────────────────────────────────────────────
         log.info('[%s] LLM 처리 중 (번역 + 분류)...', result['filename'])
@@ -160,6 +162,18 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         result['importance'] = llm_result.get('중요도', '')
         result['category']   = llm_result.get('구분', '')
         result['notifying_country'] = parsed.get('notifying_member', '')
+
+        # ── 4b. Compute 국내수출품목 ───────────────────────────────────────
+        if is_korea_targeted:
+            export_items = llm_result.get('해당품목', '') or '-'
+        elif is_all_partners:
+            ensure_export_loaded(cfg)
+            export_items, export_uncertain = _export_lookup.lookup(
+                parsed.get('notifying_member', ''),
+                llm_result.get('해당품목', ''),
+                is_all_partners=True,
+            )
+        # else: third-country restriction → export_items stays '-'
 
         # ── 5. Date calculations ───────────────────────────────────────────
         date_fields = {}
@@ -190,9 +204,13 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
             '내용':         llm_result.get('내용', ''),
             '해당품목':     llm_result.get('해당품목', ''),
             '목적':         llm_result.get('목적', ''),
-            '해당국가':     llm_result.get('해당국가', ''),
+            '해당국가':     regions_kr,
             '국내수출품목': export_items if export_items else '-',
-            '관련부서':     llm_result.get('관련부서', ''),
+            '관련부서':     (dept_lookup.lookup_dept(
+                                llm_result.get('구분', ''),
+                                llm_result.get('통보내용', ''),
+                                llm_result.get('통보_세부', ''),
+                            ) or llm_result.get('관련부서', '')),
             '주간보고':     llm_result.get('주간보고', ''),
             '구분':         llm_result.get('구분', ''),
             '품목':         llm_result.get('품목', ''),
@@ -203,7 +221,11 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         flags = list(llm_result.get('flags', []))
         if export_uncertain:
             flags.append('국내수출품목')
-        if len(llm_result.get('관련부서', '').split('\n')) > 2:
+        if not dept_lookup.lookup_dept(
+            llm_result.get('구분', ''),
+            llm_result.get('통보내용', ''),
+            llm_result.get('통보_세부', ''),
+        ):
             flags.append('관련부서')
 
         result['flags'] = flags

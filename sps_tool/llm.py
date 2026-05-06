@@ -122,6 +122,24 @@ Aquatic/fisheries: 해수부, 식약처
 Feed standards: 축산환경자원과
 Tobacco: 식약처, 보건복지부
 
+--- NOTIFICATION CONTENT CATEGORIES (통보내용) ---
+Select the single best matching category for '통보내용' output field:
+식물검역 | 비료 | 동물검역 | 사료첨가제 | 침입외래종 | 농약 | 동물용의약품 | GMO/LMO |
+농산물 | 축산물 | 사료 | 특용작물 | 친환경·유기농산물 | 식용곤충·양잠 | 팽이버섯 |
+신소재식품 | 할랄식품 | 식품첨가물 | 미생물/가공식품/제조시설 | 수산물 | 물/살생물제품 | 담배
+
+For '통보_세부', select the best sub-type within the chosen 통보내용 (leave empty if none applies):
+식물검역: 식물, 종자, 목재, 식물성비료/농기계, 목재포장재, 병해충
+동물검역: 동물, 축산물, 동물성비료, 야생동물, 수산물
+사료첨가제: 가축, 반려동물
+침입외래종: 동물, 식물체
+농약: 농산물, 축산물, 사료, 천연식물보호제, 규정
+동물용의약품: MRL, 항생제, 규정
+GMO/LMO: 사료, 식물체, 종자, 식품
+농산물: 품질, 중금속, 곰팡이독소
+축산물: 위생·안전, 품질
+수산물: 위생품질
+
 --- OUTPUT FORMAT ---
 Return ONLY this JSON object (no other text):
 {{
@@ -138,6 +156,8 @@ Return ONLY this JSON object (no other text):
   "중요도": "검토 or 참고 or -",
   "중요도_reason": "1-sentence reasoning citing specific rule",
   "관련부서": "Department 1\\nDepartment 2\\n(one per line)",
+  "통보내용": "one value from the 통보내용 list above",
+  "통보_세부": "one sub-type from the list above, or empty string",
   "품목": "Short Korean product label (e.g., 옥수수(Zea mays) 종자 or 가금 및 가금제품)",
   "flags": ["list of field names that are uncertain or need review"],
   "source_language": "en or es or pt"
