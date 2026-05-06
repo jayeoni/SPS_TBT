@@ -136,6 +136,7 @@ def _translate_date_phrase(text: str) -> str:
     text = re.sub(r'(?i)to be determined after the end of the consultation period\.?',
                   '의견수렴기간 종료 후 결정', text)
     text = re.sub(r'(?i)to be determined', '추후 결정', text)
+    text = re.sub(r'(?i)upon publication in the official journal\.?', '관보게재일', text)
     return _translate_date(text)
 
 
@@ -149,16 +150,18 @@ def _checkbox(text: str, option_prefix: str) -> str:
     return '[  ]'
 
 
-def _expand_ispm_numbers(raw_text: str) -> list:
-    """Return list of 'ISPM N Korean-title' strings parsed from raw_text."""
+def _expand_ispm_numbers(raw_text: str) -> str:
+    """Return 'ISPM 제 N장, 제 M장' string parsed from raw_text, or '' if none."""
     numbers = re.findall(r'\b(\d+)\b', raw_text)
     if not numbers:
-        return []
-    result = []
-    for n in numbers:
-        kr = ISPM_KR.get(int(n), '')
-        result.append(f'ISPM {n} {kr}'.strip())
-    return result
+        return ''
+    return 'ISPM ' + ', '.join(f'제 {n}장' for n in numbers)
+
+
+def _extract_email(text: str) -> str:
+    """Extract first email address from text, or ''."""
+    m = re.search(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}', text)
+    return m.group(0) if m else ''
 
 
 def _get_cell_font_size(cell):
@@ -312,19 +315,31 @@ def _row_standards(cell_text, t):
     oie_extra   = _after_option(r'World Organ\w+ for Animal Health')
     ippc_extra  = _after_option(r'International Plant Protection')
 
-    lines = ['관련 국제기준이 있는가? 있다면, 해당 기준을 표시']
+    # Detect "Is there a relevant international standard? Yes [ ] No [ ]"
+    m_yn = re.search(
+        r'Is there a relevant international standard.*?Yes\s*(\[[\sXx☒]*\])\s*No\s*(\[[\sXx☒]*\])',
+        cell_text, re.IGNORECASE | re.DOTALL,
+    )
+    has_std_yes = '[X]' if m_yn and m_yn.group(1).strip('[] ').lower() in ('x', '☒') else '[  ]'
+    has_std_no  = '[X]' if m_yn and m_yn.group(2).strip('[] ').lower() in ('x', '☒') else '[  ]'
+
+    # Detect "Does this measure conform to the international standard? Yes [ ] No [ ]"
+    m_conf = re.search(
+        r'Does this measure conform.*?Yes\s*(\[[\sXx☒]*\])\s*No\s*(\[[\sXx☒]*\])',
+        cell_text, re.IGNORECASE | re.DOTALL,
+    )
+    conf_yes = '[X]' if m_conf and m_conf.group(1).strip('[] ').lower() in ('x', '☒') else '[  ]'
+    conf_no  = '[X]' if m_conf and m_conf.group(2).strip('[] ').lower() in ('x', '☒') else '[  ]'
+
+    lines = [f'관련 국제기준이 있는가? {has_std_yes} 예  {has_std_no} 아니오  있다면, 해당 기준을 표시']
     lines.append(f'{codex_cb} 국제식품규격위원회(Codex Alimentarius Commission) [예 ; Codex 규정 또는 관련문서의 제목 또는 문서번호] : {codex_extra}')
     lines.append(f'{oie_cb}  세계동물보건기구(OIE) (예 : 육상동물 또는 수생동물 위생규약, Chapter 번호) :  {oie_extra}')
     ippc_label = f'{ippc_cb} 국제식물보호협약(International Plant Protection Convention) [예: 식물위생조치를 위한 국제 기준(ISPM) 번호] :'
-    ispm_lines = _expand_ispm_numbers(ippc_extra)
-    if ispm_lines:
-        lines.append(ippc_label)
-        lines.extend(ispm_lines)
-    else:
-        lines.append(f'{ippc_label} {ippc_extra}')
+    ispm_str = _expand_ispm_numbers(ippc_extra)
+    lines.append(f'{ippc_label} {ispm_str or ippc_extra}')
     lines.append(f'{none_cb}  없음')
     lines.append('제안된 규정이 관련 국제기준과 일치하는가?')
-    lines.append('[ ] 예   [ ]   아니오')
+    lines.append(f'{conf_yes} 예   {conf_no} 아니오')
     lines.append('그렇지 않다면 가능한 경우는 항상 국제기준과 어떻게 다르고 왜 그러한지 설명:')
     return lines
 
@@ -373,15 +388,20 @@ def _row_comments(cell_text, t):
         f'의견제출 마감일: {sixty_cb} 통보문 배포일로부터 60일 후 그리고/또는 [날짜(일/월/년)]: {date_kr}',
         f'의견 처리 담당기관 또는 관계당국: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소:',
     ]
+    email = _extract_email(cell_text)
+    if email:
+        lines.append(email)
     return lines
 
 
 def _row_texts_available(cell_text, t):
     nna_cb = _checkbox(cell_text, 'National Notification Authority')
     neq_cb = _checkbox(cell_text, 'National Enquiry Point')
-    return [
-        f'전문 입수가 가능한 곳: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소: ',
-    ]
+    lines = [f'전문 입수가 가능한 곳: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소: ']
+    email = _extract_email(cell_text)
+    if email:
+        lines.append(email)
+    return lines
 
 
 def _row_addendum_intro(cell_text, t):
@@ -426,9 +446,11 @@ def _row_addendum_comment_period_sec(cell_text, t):
 def _row_addendum_agency_comments(cell_text, t):
     nna_cb = _checkbox(cell_text, 'National Notification Authority')
     neq_cb = _checkbox(cell_text, 'National Enquiry Point')
-    return [
-        f'의견 처리 담당기관 또는 관계당국: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소:',
-    ]
+    lines = [f'의견 처리 담당기관 또는 관계당국: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소:']
+    email = _extract_email(cell_text)
+    if email:
+        lines.append(email)
+    return lines
 
 
 ROW_BUILDERS = {

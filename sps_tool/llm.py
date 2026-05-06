@@ -143,8 +143,8 @@ GMO/LMO: 사료, 식물체, 종자, 식품
 --- OUTPUT FORMAT ---
 Return ONLY this JSON object (no other text):
 {{
-  "제목": "Korean title (include scientific name as 국문명(학명) if present)",
-  "내용": "Korean content summary in 개조식, 2-3 sentences",
+  "제목": "Full verbatim Korean translation of the title (do not shorten or rephrase, include scientific name as 국문명(학명) if present)",
+  "내용": "Full Korean translation of the description in 개조식 — translate the entire original text faithfully without summarizing or compressing",
   "해당품목": "Korean product name with 학명 if applicable",
   "목적": "Korean purpose phrase(s), semicolons between multiples. Use ONLY these exact phrases: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호",
   "해당국가": "Korean country name or '모든 교역국'",
