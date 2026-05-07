@@ -397,7 +397,7 @@ def _row_comments(cell_text, t):
 def _row_texts_available(cell_text, t):
     nna_cb = _checkbox(cell_text, 'National Notification Authority')
     neq_cb = _checkbox(cell_text, 'National Enquiry Point')
-    lines = [f'전문 입수가 가능한 곳: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소: ']
+    lines = [f'문서 입수처: {nna_cb} 국가통보처, {neq_cb} 국가질의처. 다른 기관의 주소, 팩스번호 및 이메일 주소(있는 경우):']
     email = _extract_email(cell_text)
     if email:
         lines.append(email)
@@ -423,7 +423,7 @@ def _row_addendum_country_advises(cell_text, t):
 
 
 def _row_addendum_concerns(cell_text, t):
-    lines = ['본 추가사항은 다음 내용에 관련된 것임:']
+    lines = ['이 추가사항은 다음에 관한 것임：']
     for eng_prefix, kr_label in ADDENDUM_CONCERN_OPTIONS:
         cb = _checkbox(cell_text, eng_prefix)
         lines.append(f'{cb}    {kr_label}')
@@ -446,7 +446,7 @@ def _row_addendum_comment_period_sec(cell_text, t):
 def _row_addendum_agency_comments(cell_text, t):
     nna_cb = _checkbox(cell_text, 'National Notification Authority')
     neq_cb = _checkbox(cell_text, 'National Enquiry Point')
-    lines = [f'의견 처리 담당기관 또는 관계당국: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소:']
+    lines = [f'의견처리 담당기관 또는 당국: {nna_cb} 국가통보처, {neq_cb} 국가질의처. 다른 기관의 주소, 팩스번호 및 이메일 주소(있는 경우)：']
     email = _extract_email(cell_text)
     if email:
         lines.append(email)
@@ -484,12 +484,12 @@ _TITLE_KR = {
     'ADDENDUM': '추가',
 }
 
-ADDENDUM_SKIP_ROWS = frozenset({'adoption_date', 'addendum_comment_period_sec'})
+ADDENDUM_SKIP_ROWS = frozenset({'adoption_date'})
 
 ADDENDUM_CONCERN_OPTIONS = [
     ('Modification of final date for comments', '의견수렴 마감일 변경'),
     ('Notification of adoption',                '규정의 채택, 공표 또는 발효 통보'),
-    ('Modification of content',                 '이전에 통보된 규정안의 내용 및/또는 범위 변경'),
+    ('Modification of content',                 '이전에 통보한 규정안의 내용 및/또는 범위 변경'),
     ('Withdrawal of proposed regulation',       '규정안 철회'),
     ('Change in proposed date',                 '채택, 공표 또는 발효예정일 변경'),
     ('Other',                                   '기타:'),

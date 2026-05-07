@@ -68,13 +68,10 @@ def _all_text(doc):
 
 def _extract_doc_number(text, filename=''):
     """Find the WTO document symbol in text, fall back to filename parsing."""
-    m = DOC_NUMBER_RE.search(text)
-    if m:
-        return m.group().upper()
-
-    # Filename fallback: GSPSNBRA2474 → G/SPS/N/BRA/2474
+    # Filename takes priority for standard WTO SPS filenames — the document body
+    # often references the base number before the addendum number, causing the
+    # regex to capture the wrong (shorter) form.
     base = Path(filename).stem.upper()
-    # Remove _번역 suffix if present
     base = re.sub(r'_번역$', '', base)
     m2 = re.match(r'GSPSE?N([A-Z]{2,3})(\d+)(A(\d+))?$', base)
     if m2:
@@ -85,6 +82,11 @@ def _extract_doc_number(text, filename=''):
         if add_num:
             result += f'/Add.{add_num}'
         return result
+
+    m = DOC_NUMBER_RE.search(text)
+    if m:
+        return m.group().upper()
+
     return ''
 
 
