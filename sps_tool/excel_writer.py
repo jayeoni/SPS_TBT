@@ -111,6 +111,7 @@ def find_row(wb, doc_number: str, target_month: str = None):
 
     col_map = _detect_col_map(ws)
     needle = _normalize_doc_number(doc_number)
+    needle_base = re.sub(r'/ADD\.\d+$', '', needle)  # base number for addendum fallback
     doc_col = col_map['문서번호']
     date_col = col_map['배포일']
 
@@ -122,7 +123,7 @@ def find_row(wb, doc_number: str, target_month: str = None):
         # Handle joint notifications: 'G/SPS/N/BDI/149,G/SPS/N/KEN/358,...'
         # Match if needle is any of the IDs in the cell
         cell_ids = [_normalize_doc_number(x) for x in re.split(r'[,;]', cell_val)]
-        if needle in cell_ids or needle == cell_val:
+        if needle in cell_ids or needle == cell_val or (needle_base != needle and needle_base in cell_ids):
             base_date = None
             date_cell = row[date_col - 1]
             if date_cell.value:

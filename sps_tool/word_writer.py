@@ -484,6 +484,8 @@ _TITLE_KR = {
     'ADDENDUM': '추가',
 }
 
+ADDENDUM_SKIP_ROWS = frozenset({'adoption_date', 'addendum_comment_period_sec'})
+
 ADDENDUM_CONCERN_OPTIONS = [
     ('Modification of final date for comments', '의견수렴 마감일 변경'),
     ('Notification of adoption',                '규정의 채택, 공표 또는 발효 통보'),
@@ -640,6 +642,9 @@ def create_bilingual_docx(
                         break
 
             if not row_type or row_type not in ROW_BUILDERS:
+                continue
+
+            if is_addendum and row_type in ADDENDUM_SKIP_ROWS:
                 continue
 
             korean_lines = ROW_BUILDERS[row_type](content_cell.text, translations)
