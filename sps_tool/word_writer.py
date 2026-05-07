@@ -433,13 +433,13 @@ def _row_addendum_concerns(cell_text, t):
 def _row_addendum_comment_period_sec(cell_text, t):
     sixty_cb = _checkbox(cell_text, 'Sixty days')
     if re.search(r'not applicable', cell_text, re.IGNORECASE):
-        date_kr = '해당 없음'
+        date_kr = '해당사항 없음'
     else:
         m = re.search(r'and/or\s*\(dd/mm/yy\):\s*(.+?)(?:\n|$)', cell_text, re.IGNORECASE)
         date_kr = _translate_date_phrase(m.group(1).strip()) if m else ''
     return [
-        '의견수렴기간(Comment period): (만약 해당 추가사항이(the addendum) 사전에 통보된 조치와 관련된 제품과/또는 잠재적으로 영향받는 회원국의 범위를 확장하는 경우, 의견수렴(receipt of comments)을 위해 일반적으로 최소 60일의 새로운 기한을 제시해야 한다. 최초로 공표했던 최종 의견수렴 날짜를 확장하는 경우와 같은 다른 상황 하에서는, 추가사항(the addendum)에 제시된 날짜와 달라질 수 있다.)',
-        f'{sixty_cb}  통보 추가사항(Addendum)의 배포 날짜로부터 60일 그리고/또는 [날짜(일/월/년)]: {date_kr}',
+        '의견수렴기간: (추가사항이 제품 및/또는 잠재적으로 영향을 받는 회원국에 관하여 이전에 통보된 조치의 범위를 확대하는 경우, 일반적으로 최소 60일의 추가 의견수렴기간을 제시해야 함. 원래 발표했던 의견수렴 마감일의 연장 등 다른 상황에서는 추가통보문에서 제시되는 의견수렴기간이 달라질 수 있음. )',
+        f'{sixty_cb}        추가통보문 배포일로부터 60일 및/또는 (일/월/년): {date_kr}',
     ]
 
 
@@ -485,13 +485,55 @@ _TITLE_KR = {
 }
 
 ADDENDUM_CONCERN_OPTIONS = [
-    ('Modification of final date for comments', '의견수렴(comment)을 위한 최종 날짜 변경'),
-    ('Notification of adoption',                '규제의 채택, 공표 또는 발효의 통보'),
-    ('Modification of content',                 '기존 통보된 규제 초안의 내용과/또는 범위의 변경'),
-    ('Withdrawal of proposed regulation',       '규제(안)의 철회'),
-    ('Change in proposed date',                 '채택, 공표 또는 발효 예정일 변경'),
-    ('Other',                                   '기타'),
+    ('Modification of final date for comments', '의견수렴 마감일 변경'),
+    ('Notification of adoption',                '규정의 채택, 공표 또는 발효 통보'),
+    ('Modification of content',                 '이전에 통보된 규정안의 내용 및/또는 범위 변경'),
+    ('Withdrawal of proposed regulation',       '규정안 철회'),
+    ('Change in proposed date',                 '채택, 공표 또는 발효예정일 변경'),
+    ('Other',                                   '기타:'),
 ]
+
+
+def _insert_paragraph_after_para(para, text, font_size=None):
+    """Insert a new paragraph with Korean text immediately after para using XML."""
+    new_p = OxmlElement('w:p')
+    r = OxmlElement('w:r')
+    rPr = OxmlElement('w:rPr')
+    rFonts = OxmlElement('w:rFonts')
+    rFonts.set(qn('w:ascii'),    KOREAN_FONT)
+    rFonts.set(qn('w:hAnsi'),   KOREAN_FONT)
+    rFonts.set(qn('w:eastAsia'), KOREAN_FONT)
+    rPr.append(rFonts)
+    if font_size:
+        sz_val = str(int(font_size / 6350))
+        sz = OxmlElement('w:sz')
+        sz.set(qn('w:val'), sz_val)
+        szCs = OxmlElement('w:szCs')
+        szCs.set(qn('w:val'), sz_val)
+        rPr.append(sz)
+        rPr.append(szCs)
+    r.append(rPr)
+    t = OxmlElement('w:t')
+    t.text = text
+    if text.startswith(' ') or text.endswith(' '):
+        t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+    r.append(t)
+    new_p.append(r)
+    para._p.addnext(new_p)
+
+
+def _interleave_korean(content_cell, korean_lines, font_size, para_style):
+    """
+    Insert each Korean translation immediately after its corresponding English
+    paragraph. Falls back to appending at end if paragraph counts don't match.
+    """
+    existing_paras = [p for p in content_cell.paragraphs if p.text.strip()]
+    if len(existing_paras) != len(korean_lines):
+        for line in korean_lines:
+            _add_paragraph(content_cell, line, font_size, para_style)
+        return
+    for eng_para, kr_line in zip(existing_paras, korean_lines):
+        _insert_paragraph_after_para(eng_para, kr_line, font_size)
 
 
 def _translate_doc_titles(doc):
@@ -606,8 +648,11 @@ def create_bilingual_docx(
 
             font_size  = _get_cell_font_size(content_cell)
             para_style = _get_cell_para_style(content_cell)
-            for line in korean_lines:
-                _add_paragraph(content_cell, line, font_size, para_style)
+            if is_addendum:
+                _interleave_korean(content_cell, korean_lines, font_size, para_style)
+            else:
+                for line in korean_lines:
+                    _add_paragraph(content_cell, line, font_size, para_style)
 
             if is_non_english and row_type in ('title', 'description'):
                 _set_cell_bg(content_cell, LIME_RGB)
