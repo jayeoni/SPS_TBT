@@ -43,7 +43,7 @@ ROW_PATTERNS = {
     'texts_available':  ['text(s) available from', 'texts available from'],
     # Addendum-specific rows
     'addendum_intro':           ['the following communication', 'being circulated at the request'],
-    'addendum_country_advises': ['hereby advises'],
+    'addendum_country_advises': ['hereby advises', 'hereby notifies'],
     'addendum_concerns':        ['this addendum concerns'],
     'addendum_comment_period_sec': ['comment period:'],
     'addendum_agency_comments': ['agency or authority designated to handle comments'],
@@ -426,7 +426,7 @@ def _row_addendum_concerns(cell_text, t):
     lines = ['이 추가사항은 다음에 관한 것임：']
     for eng_prefix, kr_label in ADDENDUM_CONCERN_OPTIONS:
         cb = _checkbox(cell_text, eng_prefix)
-        lines.append(f'{cb}    {kr_label}')
+        lines.append(f'{cb}\t{kr_label}')
     return lines
 
 
@@ -497,8 +497,18 @@ ADDENDUM_CONCERN_OPTIONS = [
 
 
 def _insert_paragraph_after_para(para, text, font_size=None):
-    """Insert a new paragraph with Korean text immediately after para using XML."""
+    """Insert a new paragraph with Korean text immediately after para using XML.
+    Copies paragraph properties (indentation, tab stops, text styles) from the source paragraph."""
+    import copy
     new_p = OxmlElement('w:p')
+    # Copy paragraph-level formatting from source (indentation, tabs, alignment)
+    src_pPr = para._p.find(qn('w:pPr'))
+    if src_pPr is not None:
+        new_pPr = copy.deepcopy(src_pPr)
+        # Remove character-level run properties embedded in pPr (bold, color, etc.)
+        for rpr in new_pPr.findall(qn('w:rPr')):
+            new_pPr.remove(rpr)
+        new_p.append(new_pPr)
     r = OxmlElement('w:r')
     rPr = OxmlElement('w:rPr')
     rFonts = OxmlElement('w:rFonts')
@@ -522,20 +532,6 @@ def _insert_paragraph_after_para(para, text, font_size=None):
     r.append(t)
     new_p.append(r)
     para._p.addnext(new_p)
-
-
-def _interleave_korean(content_cell, korean_lines, font_size, para_style):
-    """
-    Insert each Korean translation immediately after its corresponding English
-    paragraph. Falls back to appending at end if paragraph counts don't match.
-    """
-    existing_paras = [p for p in content_cell.paragraphs if p.text.strip()]
-    if len(existing_paras) != len(korean_lines):
-        for line in korean_lines:
-            _add_paragraph(content_cell, line, font_size, para_style)
-        return
-    for eng_para, kr_line in zip(existing_paras, korean_lines):
-        _insert_paragraph_after_para(eng_para, kr_line, font_size)
 
 
 def _translate_doc_titles(doc):
@@ -585,26 +581,53 @@ def _translate_addendum_reg_title(doc, translations):
     """
     For addendum docs: inject the Korean regulation title into the cell that
     follows the '___' separator line (positional, since the cell has no label).
+    In most WTO addendum files the separator is a top-level paragraph and the
+    title is the first row of the only table.
     """
     title_kr = translations.get('제목', '')
     if not title_kr:
         return
 
-    for table in doc.tables:
-        cells_flat = []
-        for row in table.rows:
-            for cell in _unique_cells(row):
-                cells_flat.append(cell)
+    # Case 1: ___ is a top-level paragraph (common in WTO addendum docs).
+    # The regulation title is then the first non-empty, non-detectable table cell.
+    for para in doc.paragraphs:
+        if re.match(r'^_+$', para.text.strip()):
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in _unique_cells(row):
+                        ctext = cell.text.strip()
+                        if ctext and not _detect_row_type(ctext):
+                            _add_paragraph(cell, title_kr, _get_cell_font_size(cell))
+                            return
+            return
 
+    # Case 2: ___ is inside a table cell.
+    for table in doc.tables:
+        cells_flat = [c for row in table.rows for c in _unique_cells(row)]
         for i, cell in enumerate(cells_flat):
             if re.match(r'^_+$', cell.text.strip()):
                 for j in range(i + 1, min(i + 4, len(cells_flat))):
                     candidate = cells_flat[j]
                     ctext = candidate.text.strip()
                     if ctext and not _detect_row_type(ctext):
-                        font_size = _get_cell_font_size(candidate)
-                        _add_paragraph(candidate, title_kr, font_size)
+                        _add_paragraph(candidate, title_kr, _get_cell_font_size(candidate))
                         return
+
+
+def _translate_addendum_top_paragraphs(doc, translations):
+    """Translate top-level paragraphs in addendum docs (intro text lives in doc.paragraphs)."""
+    for para in doc.paragraphs:
+        row_type = _detect_row_type(para.text)
+        if not row_type or row_type not in ROW_BUILDERS:
+            continue
+        if row_type in ADDENDUM_SKIP_ROWS:
+            continue
+        korean_lines = ROW_BUILDERS[row_type](para.text, translations)
+        if not korean_lines:
+            continue
+        font_size = next((r.font.size for r in para.runs if r.font.size), None)
+        for line in reversed(korean_lines):
+            _insert_paragraph_after_para(para, line, font_size)
 
 
 def create_bilingual_docx(
@@ -625,10 +648,15 @@ def create_bilingual_docx(
 
     _translate_doc_titles(doc)
 
+    # Translate top-level paragraphs (addendum intro lives in doc.paragraphs, not tables)
+    if is_addendum:
+        _translate_addendum_top_paragraphs(doc, translations)
+
     for table in doc.tables:
-        for row in table.rows:
+        rows = list(table.rows)
+        for row_idx, row in enumerate(rows):
             cells = _unique_cells(row)
-            if len(cells) < 1:
+            if not cells:
                 continue
 
             content_cell = cells[-1]
@@ -647,14 +675,53 @@ def create_bilingual_docx(
             if is_addendum and row_type in ADDENDUM_SKIP_ROWS:
                 continue
 
-            korean_lines = ROW_BUILDERS[row_type](content_cell.text, translations)
+            # Skip standalone checkbox rows in addendum docs — they belong to a section
+            # already consumed by the look-ahead in addendum_concerns /
+            # addendum_comment_period_sec processing above.
+            if is_addendum and re.match(r'^\[[ X\xa0]\]', content_cell.text.strip(), re.IGNORECASE):
+                continue
+
+            # For addendum sections spanning multiple rows (each checkbox in its own row),
+            # collect ALL row text so checkbox states are detected correctly, and track
+            # the last row so the Korean block lands below all English checkboxes.
+            section_text = content_cell.text
+            target_cell = content_cell
+            if is_addendum and row_type in ('addendum_concerns', 'addendum_comment_period_sec'):
+                for nri in range(row_idx + 1, len(rows)):
+                    ncells = _unique_cells(rows[nri])
+                    if ncells:
+                        ntext = ncells[-1].text.strip()
+                        if re.match(r'^\[[ X\xa0]\]', ntext, re.IGNORECASE):
+                            section_text += '\n' + ncells[-1].text
+                            target_cell = ncells[-1]
+                        else:
+                            break
+
+            korean_lines = ROW_BUILDERS[row_type](section_text, translations)
             if not korean_lines:
                 continue
 
             font_size  = _get_cell_font_size(content_cell)
             para_style = _get_cell_para_style(content_cell)
-            if is_addendum:
-                _interleave_korean(content_cell, korean_lines, font_size, para_style)
+
+            if is_addendum and row_type in ('addendum_concerns', 'addendum_comment_period_sec'):
+                # Append entire Korean block after the last row of this section
+                for line in korean_lines:
+                    _add_paragraph(target_cell, line, _get_cell_font_size(target_cell), para_style)
+            elif is_addendum and row_type == 'addendum_country_advises':
+                # Insert Korean right after the matching paragraph (right below body text)
+                patterns = ROW_PATTERNS.get(row_type, [])
+                matching_para = next(
+                    (p for p in content_cell.paragraphs
+                     if p.text.strip() and any(pt in p.text[:150].lower() for pt in patterns)),
+                    None,
+                )
+                if matching_para:
+                    for line in reversed(korean_lines):
+                        _insert_paragraph_after_para(matching_para, line, font_size)
+                else:
+                    for line in korean_lines:
+                        _add_paragraph(content_cell, line, font_size, para_style)
             else:
                 for line in korean_lines:
                     _add_paragraph(content_cell, line, font_size, para_style)
