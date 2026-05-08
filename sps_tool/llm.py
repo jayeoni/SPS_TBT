@@ -30,7 +30,7 @@ Always output valid JSON only. No explanation text before or after the JSON."""
 
 
 def _build_user_prompt(parsed: dict, export_items: str, terminology: dict) -> str:
-    term_lines = '\n'.join(f'  {k} → {v}' for k, v in list(terminology.items())[:50])
+    term_lines = '\n'.join(f'  {k} → {v}' for k, v in terminology.items())
 
     objectives_str = '; '.join(parsed.get('objectives_korean', [])) or '(확인 필요)'
 
@@ -67,6 +67,7 @@ Products covered: {parsed.get('products', '')}
 Regions/countries affected: {parsed.get('regions', '')}
 Objectives (checked): {objectives_str}
 Description: {parsed.get('description', '')}
+Other relevant documents: {parsed.get('other_docs', '')}
 Comment deadline (raw): {parsed.get('comment_deadline_raw', '')}
 Entry into force (raw): {parsed.get('entry_force_raw', '')}
 
@@ -145,7 +146,8 @@ Return ONLY this JSON object (no other text):
 {{
   "제목": "Full verbatim Korean translation of the title (do not shorten or rephrase, include scientific name as 국문명(학명) if present)",
   "내용": "Full Korean translation of the description in 개조식 — translate the entire original text faithfully without summarizing or compressing",
-  "해당품목": "Korean product name with 학명 if applicable",
+  "해당품목": "Accurate Korean product name — translate the English/Spanish/Portuguese product name correctly; keep scientific name in parentheses e.g., 아보카도(Persea americana)",
+  "기타문서": "Korean translation of the 'Other relevant documents' content — translate document titles/descriptions faithfully; omit URLs (they will be extracted separately); translate language availability notes (e.g., 'available in Spanish' → '스페인어로 이용가능'); leave empty string if no other documents",
   "목적": "Korean purpose phrase(s), semicolons between multiples. Use ONLY these exact phrases: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호",
   "해당국가": "Korean country name or '모든 교역국'",
   "통보국_kr": "Korean name of the notifying member country",

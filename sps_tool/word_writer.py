@@ -136,6 +136,12 @@ def _translate_date_phrase(text: str) -> str:
     text = re.sub(r'(?i)to be determined after the end of the consultation period\.?',
                   '의견수렴기간 종료 후 결정', text)
     text = re.sub(r'(?i)to be determined', '추후 결정', text)
+    text = re.sub(
+        r'(?i)approximately\s+(\d+)\s+days?\s+from\s+the\s+date\s+of\s+publication[^\n.]*',
+        lambda m: f'관보 게재일로부터 약 {m.group(1)}일 후', text)
+    text = re.sub(
+        r'(?i)(\d+)\s+days?\s+after\s+publication\s+in\s+the\s+official\s+journal\.?',
+        lambda m: f'관보 게재일로부터 {m.group(1)}일 후', text)
     text = re.sub(r'(?i)upon publication in the official journal\.?', '관보게재일', text)
     return _translate_date(text)
 
@@ -345,7 +351,17 @@ def _row_standards(cell_text, t):
 
 
 def _row_other_docs(cell_text, t):
-    return ['활용 가능한 다른 관련문서 및 언어 :']
+    lines = ['활용 가능한 다른 관련문서 및 언어:']
+    doc_kr = t.get('기타문서', '')
+    if doc_kr:
+        lines.append(doc_kr)
+    for url in re.findall(r'https?://\S+', cell_text):
+        lines.append(url)
+    lang_m = re.search(r'\(available in ([^)]+)\)', cell_text, re.IGNORECASE)
+    if lang_m:
+        lang_kr = LANG_KR.get(lang_m.group(1).strip().lower(), lang_m.group(1).strip())
+        lines.append(f'({lang_kr}로 이용가능)')
+    return lines
 
 
 def _row_adoption_date(cell_text, t):
@@ -397,7 +413,7 @@ def _row_comments(cell_text, t):
 def _row_texts_available(cell_text, t):
     nna_cb = _checkbox(cell_text, 'National Notification Authority')
     neq_cb = _checkbox(cell_text, 'National Enquiry Point')
-    lines = [f'문서 입수처: {nna_cb} 국가통보처, {neq_cb} 국가질의처. 다른 기관의 주소, 팩스번호 및 이메일 주소(있는 경우):']
+    lines = [f'전문 입수가 가능한 곳: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소:']
     email = _extract_email(cell_text)
     if email:
         lines.append(email)

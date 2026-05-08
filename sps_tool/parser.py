@@ -23,6 +23,7 @@ LABEL_PATTERNS = {
     'comment_deadline': ['final date for comments', '의견마감일', 'comment period', 'date for comments'],
     'entry_force':      ['proposed date of entry into force', '발효예정일', 'entry into force'],
     'distribution':     ['distribution date', '배포일', 'circulated', 'circulation date'],
+    'other_docs':       ['other relevant documents', '활용 가능한 다른 관련문서'],
 }
 
 OBJECTIVE_MAP = {
@@ -302,6 +303,7 @@ def parse_notification(docx_path: str) -> dict:
         'entry_force_raw':      '',
         'adoption_date_raw':    '',
         'source_language':      'en',
+        'other_docs':           '',
         'addendum':             {},
     }
 
@@ -325,6 +327,8 @@ def parse_notification(docx_path: str) -> dict:
         doc, LABEL_PATTERNS['title'])
     result['description'] = _extract_field_from_tables(
         doc, LABEL_PATTERNS['description'])
+
+    result['other_docs'] = _extract_field_from_tables(doc, LABEL_PATTERNS['other_docs'])
 
     # ── Dates ──────────────────────────────────────────────────────────────
     result['comment_deadline_raw'] = _extract_field_from_tables(
