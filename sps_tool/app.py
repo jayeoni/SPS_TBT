@@ -159,7 +159,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         )
 
         result['title_kr']  = llm_result.get('제목', '')
-        result['importance'] = llm_result.get('중요도', '')
+        result['importance'] = llm_result.get('중요도', '')  # may be overridden below
         result['category']   = llm_result.get('구분', '')
         result['notifying_country'] = parsed.get('notifying_member', '')
 
@@ -198,8 +198,19 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         # ── 6. Assemble all Excel fields ───────────────────────────────────
         is_non_english = llm_result.get('source_language', 'en') != 'en'
 
+        notif_type = ('긴급' if parsed['is_emergency']
+                      else ('추가' if parsed['is_addendum'] else '일반'))
+
+        importance = llm_result.get('중요도', '')
+        # Hard rule: third-country restriction → always '-'
+        if not is_all_partners and '한국' not in regions_kr:
+            importance = '-'
+        result['importance'] = importance
+
         all_fields = {
-            '중요도':       llm_result.get('중요도', ''),
+            '중요도':       importance,
+            '통보유형':     notif_type,
+            '통보국':       llm_result.get('통보국_kr', ''),
             '제목':         llm_result.get('제목', ''),
             '내용':         llm_result.get('내용', ''),
             '해당품목':     llm_result.get('해당품목', ''),

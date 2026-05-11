@@ -42,9 +42,13 @@ NO_FILL     = PatternFill('none')
 
 # Fields the tool writes (skips pre-filled identification fields)
 WRITABLE_FIELDS = [
-    '중요도', '제목', '내용', '해당품목', '목적', '해당국가',
+    '중요도', '통보유형', '통보국', '제목', '내용', '해당품목', '목적', '해당국가',
     '의견마감일', '발효일', '국내수출품목', '관련부서', '주간보고', '구분', '품목',
 ]
+
+# These fields are always overwritten even if the cell already has a value
+# (e.g., 통보국 may be pre-filled with the English name from WTO)
+FORCE_WRITE_FIELDS = {'통보국'}
 
 
 def _detect_col_map(ws) -> dict:
@@ -159,8 +163,9 @@ def write_fields(
 
         cell = ws.cell(row=row_idx, column=col_idx)
 
-        # Skip cells that already have a non-empty value
-        if cell.value not in (None, ''):
+        # Skip cells that already have a non-empty value,
+        # except 통보국 which is overwritten to replace pre-filled English names
+        if field_name not in FORCE_WRITE_FIELDS and cell.value not in (None, ''):
             continue
 
         value = fields[field_name]
@@ -176,13 +181,14 @@ def write_fields(
         elif is_non_english and field_name in ('제목', '내용'):
             cell.fill = LIME_FILL
 
-    # Write reviewer notes to column 20 if there are flags
-    if uncertain_fields:
+    # Write reviewer notes — only flag fields that have an actual Excel column
+    reportable_flags = [f for f in uncertain_fields if col_map.get(f)]
+    if reportable_flags:
         memo_col = col_map.get('검토메모', COL.get('검토메모'))
         if memo_col:
             note_cell = ws.cell(row=row_idx, column=memo_col)
             if note_cell.value in (None, ''):
-                note_cell.value = '검토 필요: ' + ', '.join(uncertain_fields)
+                note_cell.value = '검토 필요: ' + ', '.join(reportable_flags)
 
     return True
 
