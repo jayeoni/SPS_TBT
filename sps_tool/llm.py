@@ -30,7 +30,7 @@ Always output valid JSON only. No explanation text before or after the JSON."""
 
 
 def _build_user_prompt(parsed: dict, export_items: str, terminology: dict) -> str:
-    term_lines = '\n'.join(f'  {k} → {v}' for k, v in terminology.items())
+    term_lines = '\n'.join(f'  {k} → {v}' for k, v in list(terminology.items())[:80])
 
     objectives_str = '; '.join(parsed.get('objectives_korean', [])) or '(확인 필요)'
 
@@ -91,38 +91,6 @@ The 24 export agreement countries include: USA, Japan, EU, China, Australia, Can
 동물: animal quarantine, veterinary drug MRL, livestock feed/feed additives, pet animals, wildlife/hunting trophies, antibiotic regulations, HPAI/ASF/FMD/BSE suspensions, animal GMO/LMO
 식품: pesticide MRL (agricultural products), processed food standards, food additives, Codex standards, new food materials, aquatic/fisheries products, tobacco
 
-[관련부서]
-Plant quarantine (seeds, wood): 수출지원과(검본)
-Plant quarantine + wood/pest: 수출지원과(검본), 위험관리과(검본)
-Plant pests/diseases: 수출지원과(검본), 위험관리과(검본)
-Oilseed crops (차, 참깨, 견과류, 커피 etc): 원예산업과
-Mushrooms/ginseng/medicinal: 농식품수출진흥과, 원예산업과
-Organic/eco-friendly: 친환경농업과, 인증관리과(농관원)
-Insects/sericulture: 그린바이오산업팀
-Fertilizer (plant): 농산업수출진흥과
-GMO/LMO (plant): 수출지원과(검본), 연구개발과(농진청), 생물안전성과(농과원)
-Seeds: 종자산업지원과, 연구개발과(농진청)
-Animal quarantine (livestock): 동물검역과(검본), 위험평가과(검본)
-Livestock products/meat: 위험평가과(검본), 축산물수출위생팀(검본)
-Veterinary drug MRL: 동물약품평가과(검본), 축산물수출위생팀(검본)
-Antibiotics: 조류인플루엔자방역과, 동물약품평가과(검본), 축산물수출위생팀(검본)
-Pet animals: 반려산업동물의료과, 축산환경자원과, 축산물수출위생팀(검본)
-HPAI: 동물검역과(검본), 위험평가과(검본), 축산물수출위생팀(검본), 조류인플루엔자방역과
-ASF/FMD: 동물검역과(검본), 위험평가과(검본), 축산물수출위생팀(검본)
-Feed/feed additives (livestock): 축산환경자원과, 축산물수출위생팀(검본)
-Wildlife/invasive species: 기후부
-Pesticide MRL (농산물): 농식품수출진흥과, 잔류화학평가과(농과원)
-  (if export product exists: 농식품수출진흥과 already primary)
-Agricultural quality: 품질조사과(농관원), 식약처
-Heavy metals/mycotoxins: 안전성분석과(농과원), 식약처
-Processed food/food additives/Codex: 식약처
-Enoki mushroom (Listeria): 농식품수출진흥과, 소비안전과(농관원)
-New food materials: 연구개발과(농진청), 식약처
-GMO/LMO (food): 연구개발과(농진청), 생물안전성과(농과원), 식약처
-Aquatic/fisheries: 해수부, 식약처
-Feed standards: 축산환경자원과
-Tobacco: 식약처, 보건복지부
-
 --- NOTIFICATION CONTENT CATEGORIES (통보내용) ---
 Select the single best matching category for '통보내용' output field:
 식물검역 | 비료 | 동물검역 | 사료첨가제 | 침입외래종 | 농약 | 동물용의약품 | GMO/LMO |
@@ -144,14 +112,14 @@ GMO/LMO: 사료, 식물체, 종자, 식품
 --- OUTPUT FORMAT ---
 Return ONLY this JSON object (no other text):
 {{
-  "제목": "Full verbatim Korean translation of the title (do not shorten or rephrase, include scientific name as 국문명(학명) if present)",
-  "내용": "Full Korean translation of the description in 개조식 — translate the entire original text faithfully without summarizing or compressing",
-  "해당품목": "Accurate Korean product name — translate the English/Spanish/Portuguese product name correctly; keep scientific name in parentheses e.g., 아보카도(Persea americana)",
-  "기타문서": "Korean translation of the 'Other relevant documents' content — translate document titles/descriptions faithfully; omit URLs (they will be extracted separately); translate language availability notes (e.g., 'available in Spanish' → '스페인어로 이용가능'); leave empty string if no other documents",
-  "목적": "Korean purpose phrase(s), semicolons between multiples. Use ONLY these exact phrases: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호",
+  "제목": "Full verbatim Korean translation of the title; include scientific name as 국문명(학명) if present",
+  "내용": "Full Korean translation of description in 개조식; translate entire text faithfully, do not summarize",
+  "해당품목": "Korean product name; keep scientific name in parentheses e.g., 아보카도(Persea americana)",
+  "기타문서": "Korean translation of 'Other relevant documents'; omit URLs; translate language notes (e.g., 'available in Spanish' → '스페인어로 이용가능'); empty string if none",
+  "목적": "ONLY these exact phrases, semicolons between multiples: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호",
   "해당국가": "Korean country name or '모든 교역국'",
   "통보국_kr": "Korean name of the notifying member country",
-  "담당기관_kr": "Korean name of the agency responsible; keep original acronym in parentheses if present (e.g. 동식물위생관리규제청(AGROCALIDAD))",
+  "담당기관_kr": "Korean name of the agency; keep acronym in parentheses e.g. 동식물위생관리규제청(AGROCALIDAD)",
   "주간보고": "Single-line 개조식 Korean summary of what this notification does",
   "구분": "동물 or 식물 or 식품",
   "구분_reason": "1-sentence reasoning",
