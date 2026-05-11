@@ -11,28 +11,51 @@ from docx.oxml.ns import qn
 
 # ── Label patterns for each field (English and Korean variants) ──────────────
 LABEL_PATTERNS = {
-    'notifying_member': ['notifying member', '통보회원국', 'notifying country'],
-    'agency':           ['agency responsible', '담당기관', 'responsible agency'],
-    'products':         ['products covered', '적용대상품목', 'products'],
-    'regions':          ['regions/countries', 'regions', 'countries', '지역/국가', '국가/지역'],
-    'title':            ['title', '제목'],
-    'description':      ['description of content', '내용', 'description'],
-    'objective':        ['objective', '목적', 'reason'],
-    'standards':        ['international standards', '국제기준', 'international standard'],
-    'adoption_date':    ['proposed date of adoption', 'date of adoption', '채택예정일', 'proposed date of publication', '발행예정일'],
-    'comment_deadline': ['final date for comments', '의견마감일', 'comment period', 'date for comments'],
-    'entry_force':      ['proposed date of entry into force', '발효예정일', 'entry into force'],
+    'notifying_member': ['notifying member', '통보회원국', 'notifying country',
+                         'miembro que notifica'],
+    'agency':           ['agency responsible', '담당기관', 'responsible agency',
+                         'organismo responsable'],
+    'products':         ['products covered', '적용대상품목', 'products',
+                         'productos'],
+    'regions':          ['regions/countries', 'regions', 'countries', '지역/국가', '국가/지역',
+                         'regiones'],
+    'title':            ['title', '제목',
+                         'título', 'titulo'],
+    'description':      ['description of content', '내용', 'description',
+                         'descripción del contenido', 'descripcion del contenido'],
+    'objective':        ['objective', '목적', 'reason',
+                         'objetivo'],
+    'standards':        ['international standards', '국제기준', 'international standard',
+                         'existe una norma'],
+    'adoption_date':    ['proposed date of adoption', 'date of adoption', '채택예정일',
+                         'proposed date of publication', '발행예정일',
+                         'fecha propuesta de adopci'],
+    'comment_deadline': ['final date for comments', '의견마감일', 'comment period', 'date for comments',
+                         'fecha límite', 'fecha limite'],
+    'entry_force':      ['proposed date of entry into force', '발효예정일', 'entry into force',
+                         'entrada en vigor'],
     'distribution':     ['distribution date', '배포일', 'circulated', 'circulation date'],
-    'other_docs':       ['other relevant documents', '활용 가능한 다른 관련문서'],
+    'other_docs':       ['other relevant documents', '활용 가능한 다른 관련문서',
+                         'otros documentos'],
 }
 
 OBJECTIVE_MAP = {
+    # English
     'food safety':        '식품안전',
     'animal health':      '동물위생',
     'plant protection':   '식물보호',
     'protect humans':     '동식물 병해충 또는 질병으로부터 사람 보호',
     'protect territory':  '해충으로 인한 피해로부터 영토 보호',
     'protect humans from animal': '동식물 병해충 또는 질병으로부터 사람 보호',
+    # Spanish
+    'inocuidad de los alimentos':       '식품안전',
+    'sanidad animal':                   '동물위생',
+    'preservación de los vegetales':    '식물보호',
+    'preservacion de los vegetales':    '식물보호',
+    'protección de la salud humana':    '동식물 병해충 또는 질병으로부터 사람 보호',
+    'proteccion de la salud humana':    '동식물 병해충 또는 질병으로부터 사람 보호',
+    'protección del territorio':        '해충으로 인한 피해로부터 영토 보호',
+    'proteccion del territorio':        '해충으로 인한 피해로부터 영토 보호',
 }
 
 DOC_NUMBER_RE = re.compile(
@@ -152,19 +175,16 @@ def _extract_field_from_tables(doc, label_patterns):
 def _extract_objectives(doc):
     """
     Find checked objectives ([X] or ☒ markers) and return Korean phrases.
+    Searches the full document text for a checked mark immediately before each
+    objective key, so it works correctly whether options are in separate cells
+    (English layout) or all in one cell (Spanish/Portuguese layout).
     """
     checked = []
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in _unique_cells(row):
-                text = cell.text
-                # Only process cells that have a checked mark
-                if not ('[x]' in text.lower() or '☒' in text or '[X]' in text):
-                    continue
-                text_lower = text.lower()
-                for eng_key, kor_val in OBJECTIVE_MAP.items():
-                    if eng_key in text_lower and kor_val not in checked:
-                        checked.append(kor_val)
+    full_text = _all_text(doc)
+    for key, kor_val in OBJECTIVE_MAP.items():
+        pattern = r'(?:\[x\]|☒)\s*' + re.escape(key)
+        if re.search(pattern, full_text, re.IGNORECASE) and kor_val not in checked:
+            checked.append(kor_val)
     return checked
 
 
@@ -172,19 +192,32 @@ def _extract_regions(doc):
     """
     Extract the regions/countries field. Returns '모든 교역국' if all trading
     partners is checked, otherwise returns specific country names.
+    Handles English and Spanish WTO notification forms.
     """
     regions_raw = _extract_field_from_tables(doc, LABEL_PATTERNS['regions'])
 
-    # Look for 'all trading partners' checkbox anywhere
     all_text = _all_text(doc)
+
+    # English / Korean: all trading partners
     if re.search(r'\[x\].*?all trading partners', all_text, re.IGNORECASE | re.DOTALL):
         return '모든 교역국'
     if re.search(r'\[x\].*?모든 교역국', all_text, re.DOTALL):
         return '모든 교역국'
+    # Spanish: "Todos los interlocutores comerciales"
+    if re.search(r'\[x\].*?todos los interlocutores', all_text, re.IGNORECASE | re.DOTALL):
+        return '모든 교역국'
 
-    # Look for specific regions checked
+    # English: specific regions
     specific_match = re.search(
         r'\[x\][^\n]*?specific regions?(?:\s+or\s+countries?)?\s*:\s*([^\n\[]+)',
+        all_text, re.IGNORECASE
+    )
+    if specific_match:
+        return specific_match.group(1).strip()
+
+    # Spanish: "Regiones o países específicos: [country]"
+    specific_match = re.search(
+        r'\[x\][^\n]*?espec[íi]ficos\s*:\s*([^\n\[]+)',
         all_text, re.IGNORECASE
     )
     if specific_match:

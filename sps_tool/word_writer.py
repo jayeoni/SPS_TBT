@@ -252,6 +252,12 @@ def _row_regions(cell_text, t):
     all_cb  = _checkbox(cell_text, 'All trading partners')
     spec_cb = _checkbox(cell_text, 'Specific regions')
 
+    # Spanish fallback: "Todos los interlocutores comerciales" / "Regiones o países específicos"
+    if all_cb == '[  ]' and re.search(r'\[x\][^\n]*todos los interlocutores', cell_text, re.IGNORECASE):
+        all_cb = '[X]'
+    if spec_cb == '[  ]' and re.search(r'\[x\][^\n]*espec[íi]ficos', cell_text, re.IGNORECASE):
+        spec_cb = '[X]'
+
     countries_kr = t.get('해당국가', '')
     spec_text = '특정 지역 및 국가: '
     if spec_cb == '[X]' and countries_kr and countries_kr != '모든 교역국':
@@ -298,10 +304,17 @@ def _row_description(cell_text, t):
     return [f'내용 설명: {desc_kr}']
 
 
+_OBJECTIVE_MOKJEOK_KEYS = ['식품안전', '동물위생', '식물보호', '사람 보호', '영토 보호']
+
 def _row_objective(cell_text, t):
+    # LLM-derived 목적 is used as fallback for Spanish/Portuguese docs where
+    # English checkbox labels are absent and _checkbox() returns '[  ]'.
+    mokjeok = t.get('목적', '')
     parts = []
-    for eng_prefix, kr_label in OBJECTIVE_OPTIONS:
+    for (eng_prefix, kr_label), key in zip(OBJECTIVE_OPTIONS, _OBJECTIVE_MOKJEOK_KEYS):
         cb = _checkbox(cell_text, eng_prefix)
+        if cb == '[  ]' and key in mokjeok:
+            cb = '[X]'
         parts.append(f'{cb} {kr_label}')
     return ['목적 및 근거: ' + ', '.join(parts)]
 

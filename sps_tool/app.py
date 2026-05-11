@@ -253,7 +253,11 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         log.info('[%s] 번역본 Word 파일 생성 중...', result['filename'])
         output_word = word_writer.create_bilingual_docx(
             source_path=docx_path,
-            translations={**llm_result, '통보국_kr': llm_result.get('통보국_kr', '')},
+            translations={
+                **llm_result,
+                '통보국_kr': llm_result.get('통보국_kr', ''),
+                '해당국가': regions_kr or llm_result.get('해당국가', ''),
+            },
             is_non_english=is_non_english,
             is_addendum=parsed['is_addendum'],
         )
