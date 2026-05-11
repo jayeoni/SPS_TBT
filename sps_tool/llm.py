@@ -109,6 +109,20 @@ GMO/LMO: 사료, 식물체, 종자, 식품
 축산물: 위생·안전, 품질
 수산물: 위생품질
 
+--- 주간보고 EXAMPLES (match these styles) ---
+벨기에산 번식용 옥수수(Zea mays) 종자의 수입검역요건 발효
+아르헨티나산 벳지(Vicia villosa) 종자의 수입검역요건(안) 제정
+미국산 번식용 아보카도(Persea americana) 구근의 수입검역요건 개정
+캐나다산 양과 염소의 수입을 위한 위생요건 제정
+HPAI 발생에 따른 아르헨티나산 가금 및 가금제품의 수입 일시중단(90일)
+고병원성 조류인플루엔자(HPAI) 확산 방지를 위한 폴란드산 살아있는 가금 및 가금류 지육의 수입 또는 경유 일시중단 관련 재개요건 추가
+HPAI 발생에 따른 프랑스 루아르아틀랑티크(Loire-Atlantique)산 가금육, 알류 및 그 제품의 일시 수입금지 해제
+식품의 규격 및 기준의 제정 - 자색차(Purple tea)
+식품의 규격 및 기준의 개정 - 참치 및 가다랑어 통조림
+캐나다 규제병해충 목록 개정 - 일부 병해충 삭제
+신선 식용 블루베리(Vaccinium spp.) 수입 가능국가 추가-칠레, 멕시코, 모로코, 페루, 미국
+개·고양이·수생생물 외 사료첨가제 재허가
+
 --- OUTPUT FORMAT ---
 Return ONLY this JSON object (no other text):
 {{
@@ -120,7 +134,7 @@ Return ONLY this JSON object (no other text):
   "해당국가": "Korean country name or '모든 교역국'",
   "통보국_kr": "Korean name of the notifying member country",
   "담당기관_kr": "Korean name of the agency; keep acronym in parentheses e.g. 동식물위생관리규제청(AGROCALIDAD)",
-  "주간보고": "Single-line 개조식 Korean summary of what this notification does",
+  "주간보고": "Single 개조식 Korean action line — follow the 주간보고 EXAMPLES patterns above",
   "구분": "동물 or 식물 or 식품",
   "구분_reason": "1-sentence reasoning",
   "중요도": "검토 or 참고 or -",
