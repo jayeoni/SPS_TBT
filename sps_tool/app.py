@@ -249,19 +249,22 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         else:
             result['error'] = 'Excel 파일 경로가 설정되지 않았습니다. 설정(Settings)을 확인해주세요.'
 
-        # ── 8. Create bilingual Word file ──────────────────────────────────
-        log.info('[%s] 번역본 Word 파일 생성 중...', result['filename'])
-        output_word = word_writer.create_bilingual_docx(
-            source_path=docx_path,
-            translations={
-                **llm_result,
-                '통보국_kr': llm_result.get('통보국_kr', ''),
-                '해당국가': regions_kr or llm_result.get('해당국가', ''),
-            },
-            is_non_english=is_non_english,
-            is_addendum=parsed['is_addendum'],
-        )
-        result['word_file'] = Path(output_word).name
+        # ── 8. Create bilingual Word file (English source only) ────────────
+        if not is_non_english:
+            log.info('[%s] 번역본 Word 파일 생성 중...', result['filename'])
+            output_word = word_writer.create_bilingual_docx(
+                source_path=docx_path,
+                translations={
+                    **llm_result,
+                    '통보국_kr': llm_result.get('통보국_kr', ''),
+                    '해당국가': regions_kr or llm_result.get('해당국가', ''),
+                },
+                is_non_english=is_non_english,
+                is_addendum=parsed['is_addendum'],
+            )
+            result['word_file'] = Path(output_word).name
+        else:
+            log.info('[%s] 비영어 문서 — 번역본 Word 파일 생성 생략', result['filename'])
 
         result['success'] = True
         log.info('[%s] 완료 ✓', result['filename'])
