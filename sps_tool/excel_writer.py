@@ -173,9 +173,10 @@ def write_fields(
             continue
 
         cell.value = value
-        cell.fill = NO_FILL
 
-        # Apply uncertainty highlighting
+        # Only touch the fill when explicitly highlighting — setting fill
+        # unconditionally (even to NO_FILL) corrupts shared style indices in
+        # other sheets via openpyxl's style-sharing mechanism.
         if field_name in uncertain_fields:
             cell.fill = YELLOW_FILL
         elif is_non_english and field_name in ('제목', '내용'):
