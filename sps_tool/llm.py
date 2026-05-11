@@ -195,41 +195,48 @@ def _process_with_ollama(parsed: dict, export_items: str, terminology: dict, mod
         'options': {'temperature': 0.1, 'num_predict': 4096},
     }).encode('utf-8')
 
-    req = urllib.request.Request(
-        f'{OLLAMA_BASE_URL}/api/chat',
-        data=payload,
-        method='POST',
-        headers={'Content-Type': 'application/json'},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            data = json.loads(resp.read())
-            raw = data['message']['content'].strip()
-    except urllib.error.URLError as e:
-        msg = str(e).lower()
-        if 'connection refused' in msg or 'connect' in msg:
+    for attempt in range(2):  # retry once on timeout (model cold-start)
+        req = urllib.request.Request(
+            f'{OLLAMA_BASE_URL}/api/chat',
+            data=payload,
+            method='POST',
+            headers={'Content-Type': 'application/json'},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=600) as resp:
+                data = json.loads(resp.read())
+                raw = data['message']['content'].strip()
+            return _parse_llm_response(raw)
+        except TimeoutError:
+            if attempt == 0:
+                continue  # model may still be loading; retry once
             raise ValueError(
-                'Ollama에 연결할 수 없습니다.\n'
-                '1. https://ollama.com 에서 Ollama를 설치하세요.\n'
-                '2. 터미널에서 실행: ollama serve\n'
-                f'3. 모델 다운로드: ollama pull {model}'
+                'Ollama 응답 시간 초과 (2회 시도).\n'
+                'Ollama가 실행 중인지, 모델이 정상적으로 로드되었는지 확인하세요.'
             )
-        raise ValueError(f'Ollama 오류: {e}')
-    except Exception as e:
-        resp_text = ''
-        if hasattr(e, 'read'):
-            try:
-                resp_text = e.read().decode('utf-8', errors='replace')
-            except Exception:
-                pass
-        if 'model' in resp_text.lower() and 'not found' in resp_text.lower():
-            raise ValueError(
-                f'Ollama 모델 "{model}"을 찾을 수 없습니다.\n'
-                f'설치 명령: ollama pull {model}'
-            )
-        raise ValueError(f'Ollama 처리 오류: {e}')
-
-    return _parse_llm_response(raw)
+        except urllib.error.URLError as e:
+            msg = str(e).lower()
+            if 'connection refused' in msg or 'connect' in msg:
+                raise ValueError(
+                    'Ollama에 연결할 수 없습니다.\n'
+                    '1. https://ollama.com 에서 Ollama를 설치하세요.\n'
+                    '2. 터미널에서 실행: ollama serve\n'
+                    f'3. 모델 다운로드: ollama pull {model}'
+                )
+            raise ValueError(f'Ollama 오류: {e}')
+        except Exception as e:
+            resp_text = ''
+            if hasattr(e, 'read'):
+                try:
+                    resp_text = e.read().decode('utf-8', errors='replace')
+                except Exception:
+                    pass
+            if 'model' in resp_text.lower() and 'not found' in resp_text.lower():
+                raise ValueError(
+                    f'Ollama 모델 "{model}"을 찾을 수 없습니다.\n'
+                    f'설치 명령: ollama pull {model}'
+                )
+            raise ValueError(f'Ollama 처리 오류: {e}')
 
 
 def check_ollama_status(model: str = MODEL_OLLAMA_DEFAULT) -> dict:
