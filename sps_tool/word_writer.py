@@ -449,11 +449,8 @@ def _row_comments(cell_text, t):
 def _row_texts_available(cell_text, t):
     nna_cb = _checkbox(cell_text, 'National Notification Authority')
     neq_cb = _checkbox(cell_text, 'National Enquiry Point')
-    lines = [f'전문 입수가 가능한 곳: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소:']
-    email = _extract_email(cell_text)
-    if email:
-        lines.append(email)
-    return lines
+    # Contact details already exist in the original cell — not duplicated here
+    return [f'전문 입수가 가능한 곳: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소:']
 
 
 def _row_addendum_intro(cell_text, t):
@@ -552,11 +549,17 @@ def _insert_paragraph_after_para(para, text, font_size=None):
     """Insert a new paragraph with Korean text immediately after para using XML.
     Copies paragraph and run properties (indentation, bold, underline, etc.) from the source."""
     import copy
-    # Read run-level props from source paragraph's first non-empty run
-    src_run = next((r for r in para.runs if r.text.strip()), None)
-    src_bold      = src_run.bold      if src_run else None
-    src_italic    = src_run.italic    if src_run else None
-    src_underline = src_run.underline if src_run else None
+    # Only apply bold/italic/underline when ALL content runs share that property;
+    # mixed paragraphs (e.g. bold label + plain body) should produce plain Korean text.
+    non_empty_runs = [r for r in para.runs if r.text.strip()]
+    if non_empty_runs:
+        src_bold      = True if all(r.bold      is True for r in non_empty_runs) else None
+        src_italic    = True if all(r.italic    is True for r in non_empty_runs) else None
+        src_underline = True if all(r.underline is True for r in non_empty_runs) else None
+        if font_size is None:
+            font_size = next((r.font.size for r in non_empty_runs if r.font.size), None)
+    else:
+        src_bold = src_italic = src_underline = None
 
     new_p = OxmlElement('w:p')
     # Copy paragraph-level formatting from source (indentation, tabs, alignment)
@@ -825,6 +828,20 @@ def create_bilingual_docx(
                         _insert_paragraph_after_para(agency_para, korean_lines[1], font_size)
                     else:
                         _add_paragraph(content_cell, korean_lines[1], font_size, para_style,
+                                       bold=bold, italic=italic, underline=underline)
+            elif row_type == 'texts_available':
+                # 전문 입수가 가능한 곳 → right after the "Text(s) available from:" paragraph
+                # Contact details already exist in the original cell — not touched
+                anchor_para = next(
+                    (p for p in content_cell.paragraphs if re.search(
+                        r'texts? available from', p.text, re.IGNORECASE)),
+                    None,
+                )
+                if korean_lines:
+                    if anchor_para:
+                        _insert_paragraph_after_para(anchor_para, korean_lines[0], font_size)
+                    else:
+                        _add_paragraph(content_cell, korean_lines[0], font_size, para_style,
                                        bold=bold, italic=italic, underline=underline)
             else:
                 for line in korean_lines:
