@@ -177,29 +177,20 @@ def _extract_email(text: str) -> str:
     return m.group(0) if m else ''
 
 
-def _get_cell_font_size(cell):
+def _get_cell_style(cell):
+    """Return (font_size, para_style, bold, italic, underline) in a single pass."""
+    font_size = para_style = bold = italic = underline = None
     for para in cell.paragraphs:
+        if para_style is None and para.runs:
+            para_style = para.style.name
         for run in para.runs:
-            if run.font.size:
-                return run.font.size
-    return None
-
-
-def _get_cell_para_style(cell):
-    """Return the style name of the first non-empty paragraph in the cell."""
-    for para in cell.paragraphs:
-        if para.runs:
-            return para.style.name
-    return None
-
-
-def _get_cell_dominant_run_props(cell):
-    """Return (bold, italic, underline) from the first non-empty run in the cell."""
-    for para in cell.paragraphs:
-        for run in para.runs:
-            if run.text.strip():
-                return run.bold, run.italic, run.underline
-    return None, None, None
+            if font_size is None and run.font.size:
+                font_size = run.font.size
+            if bold is None and run.text.strip():
+                bold, italic, underline = run.bold, run.italic, run.underline
+        if font_size is not None and para_style is not None and bold is not None:
+            break
+    return font_size, para_style, bold, italic, underline
 
 
 def _apply_korean_font(run):
@@ -643,8 +634,7 @@ def _translate_doc_titles(doc):
                 kr = _TITLE_KR.get(cell_text.upper(), '')
                 if not kr:
                     continue
-                font_size = _get_cell_font_size(cell)
-                bold, italic, underline = _get_cell_dominant_run_props(cell)
+                font_size, _, bold, italic, underline = _get_cell_style(cell)
                 _add_paragraph(cell, kr, font_size, bold=bold, italic=italic, underline=underline)
 
 
@@ -676,7 +666,7 @@ def _translate_addendum_reg_title(doc, translations):
                     for cell in _unique_cells(row):
                         ctext = cell.text.strip()
                         if ctext and not _detect_row_type(ctext):
-                            _add_paragraph(cell, title_kr, _get_cell_font_size(cell))
+                            _add_paragraph(cell, title_kr, _get_cell_style(cell)[0])
                             return
             return
 
@@ -689,7 +679,7 @@ def _translate_addendum_reg_title(doc, translations):
                     candidate = cells_flat[j]
                     ctext = candidate.text.strip()
                     if ctext and not _detect_row_type(ctext):
-                        _add_paragraph(candidate, title_kr, _get_cell_font_size(candidate))
+                        _add_paragraph(candidate, title_kr, _get_cell_style(candidate)[0])
                         return
 
 
@@ -780,15 +770,13 @@ def create_bilingual_docx(
             if not korean_lines:
                 continue
 
-            font_size  = _get_cell_font_size(content_cell)
-            para_style = _get_cell_para_style(content_cell)
-            bold, italic, underline = _get_cell_dominant_run_props(content_cell)
+            font_size, para_style, bold, italic, underline = _get_cell_style(content_cell)
 
             if is_addendum and row_type in ('addendum_concerns', 'addendum_comment_period_sec'):
                 # Append entire Korean block after the last row of this section
-                t_bold, t_italic, t_underline = _get_cell_dominant_run_props(target_cell)
+                t_font, _, t_bold, t_italic, t_underline = _get_cell_style(target_cell)
                 for line in korean_lines:
-                    _add_paragraph(target_cell, line, _get_cell_font_size(target_cell), para_style,
+                    _add_paragraph(target_cell, line, t_font, para_style,
                                    bold=t_bold, italic=t_italic, underline=t_underline)
             elif is_addendum and row_type == 'addendum_country_advises':
                 # Insert Korean right after the matching paragraph (right below body text)
