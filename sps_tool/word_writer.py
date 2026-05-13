@@ -439,14 +439,11 @@ def _row_comments(cell_text, t):
                   cell_text, re.IGNORECASE | re.DOTALL)
     date_kr = _translate_date_phrase(m.group(1).strip()) if m else ''
 
-    lines = [
+    # Email/address/phone already exist in the original cell — not duplicated here
+    return [
         f'의견제출 마감일: {sixty_cb} 통보문 배포일로부터 60일 후 그리고/또는 [날짜(일/월/년)]: {date_kr}',
         f'의견 처리 담당기관 또는 관계당국: {nna_cb} 국가 통보처, {neq_cb} 국가 문의처 또는 (존재할 경우) 타 기관의 주소, 팩스 번호, 이메일 주소:',
     ]
-    email = _extract_email(cell_text)
-    if email:
-        lines.append(email)
-    return lines
 
 
 def _row_texts_available(cell_text, t):
@@ -800,6 +797,34 @@ def create_bilingual_docx(
                 else:
                     for line in korean_lines:
                         _add_paragraph(content_cell, line, font_size, para_style,
+                                       bold=bold, italic=italic, underline=underline)
+            elif row_type == 'comments':
+                # 의견제출 마감일 → right after the date/sixty-days paragraph
+                # 의견 처리 담당기관 → right after the agency/"other body:" paragraph
+                # Contact details already exist in the original cell — not touched
+                date_para = next(
+                    (p for p in content_cell.paragraphs if re.search(
+                        r'final date for comments|sixty days|and/or \(dd/mm/yy\)',
+                        p.text, re.IGNORECASE)),
+                    None,
+                )
+                agency_para = next(
+                    (p for p in content_cell.paragraphs if re.search(
+                        r'agency or authority|national notification authority|national enquiry point|other body',
+                        p.text, re.IGNORECASE)),
+                    None,
+                )
+                if korean_lines:
+                    if date_para:
+                        _insert_paragraph_after_para(date_para, korean_lines[0], font_size)
+                    else:
+                        _add_paragraph(content_cell, korean_lines[0], font_size, para_style,
+                                       bold=bold, italic=italic, underline=underline)
+                if len(korean_lines) > 1:
+                    if agency_para:
+                        _insert_paragraph_after_para(agency_para, korean_lines[1], font_size)
+                    else:
+                        _add_paragraph(content_cell, korean_lines[1], font_size, para_style,
                                        bold=bold, italic=italic, underline=underline)
             else:
                 for line in korean_lines:
