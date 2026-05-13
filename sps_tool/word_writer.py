@@ -49,6 +49,13 @@ ROW_PATTERNS = {
     'addendum_agency_comments': ['agency or authority designated to handle comments'],
 }
 
+# Known agency name → Korean translation (checked against original English cell text)
+# Used to override unreliable LLM translations for specific agencies.
+KNOWN_AGENCIES = [
+    (re.compile(r'state phytosanitary service', re.IGNORECASE), '식물위생청(SFE)'),
+    (re.compile(r'ministry of agriculture and livestock', re.IGNORECASE), '농축산부(MAG)'),
+]
+
 OBJECTIVE_OPTIONS = [
     ('food safety',            '식품안전'),
     ('animal health',          '동물위생'),
@@ -186,6 +193,15 @@ def _get_cell_para_style(cell):
     return None
 
 
+def _get_cell_dominant_run_props(cell):
+    """Return (bold, italic, underline) from the first non-empty run in the cell."""
+    for para in cell.paragraphs:
+        for run in para.runs:
+            if run.text.strip():
+                return run.bold, run.italic, run.underline
+    return None, None, None
+
+
 def _apply_korean_font(run):
     run.font.name = KOREAN_FONT
     rPr = run._r.get_or_add_rPr()
@@ -211,7 +227,7 @@ def _set_cell_bg(cell, rgb: tuple):
     tcPr.append(shd)
 
 
-def _add_paragraph(cell, text: str, font_size=None, style_name=None):
+def _add_paragraph(cell, text: str, font_size=None, style_name=None, bold=None, italic=None, underline=None):
     try:
         para = cell.add_paragraph(style=style_name)
     except Exception:
@@ -220,6 +236,12 @@ def _add_paragraph(cell, text: str, font_size=None, style_name=None):
     _apply_korean_font(run)
     if font_size:
         run.font.size = font_size
+    if bold is not None:
+        run.bold = bold
+    if italic is not None:
+        run.italic = italic
+    if underline is not None:
+        run.underline = underline
 
 
 # ── Per-row translation builders ──────────────────────────────────────────────
@@ -235,7 +257,12 @@ def _row_notifying_member(cell_text, t):
 
 
 def _row_agency(cell_text, t):
-    agency_kr = t.get('담당기관_kr', '')
+    # Check known agencies against original English text; build from hardcoded table if found
+    found = [kr for pattern, kr in KNOWN_AGENCIES if pattern.search(cell_text)]
+    if found:
+        agency_kr = ' / '.join(found)
+    else:
+        agency_kr = t.get('담당기관_kr', '')
     if not agency_kr:
         return []
     return [f'담당 기관: {agency_kr}']
@@ -527,14 +554,19 @@ ADDENDUM_CONCERN_OPTIONS = [
 
 def _insert_paragraph_after_para(para, text, font_size=None):
     """Insert a new paragraph with Korean text immediately after para using XML.
-    Copies paragraph properties (indentation, tab stops, text styles) from the source paragraph."""
+    Copies paragraph and run properties (indentation, bold, underline, etc.) from the source."""
     import copy
+    # Read run-level props from source paragraph's first non-empty run
+    src_run = next((r for r in para.runs if r.text.strip()), None)
+    src_bold      = src_run.bold      if src_run else None
+    src_italic    = src_run.italic    if src_run else None
+    src_underline = src_run.underline if src_run else None
+
     new_p = OxmlElement('w:p')
     # Copy paragraph-level formatting from source (indentation, tabs, alignment)
     src_pPr = para._p.find(qn('w:pPr'))
     if src_pPr is not None:
         new_pPr = copy.deepcopy(src_pPr)
-        # Remove character-level run properties embedded in pPr (bold, color, etc.)
         for rpr in new_pPr.findall(qn('w:rPr')):
             new_pPr.remove(rpr)
         new_p.append(new_pPr)
@@ -545,6 +577,14 @@ def _insert_paragraph_after_para(para, text, font_size=None):
     rFonts.set(qn('w:hAnsi'),   KOREAN_FONT)
     rFonts.set(qn('w:eastAsia'), KOREAN_FONT)
     rPr.append(rFonts)
+    if src_bold:
+        rPr.append(OxmlElement('w:b'))
+    if src_italic:
+        rPr.append(OxmlElement('w:i'))
+    if src_underline:
+        u = OxmlElement('w:u')
+        u.set(qn('w:val'), 'single')
+        rPr.append(u)
     if font_size:
         sz_val = str(int(font_size / 6350))
         sz = OxmlElement('w:sz')
@@ -574,10 +614,12 @@ def _translate_doc_titles(doc):
         if not kr:
             continue
         font_size = None
+        src_run = None
         for run in para.runs:
-            if run.font.size:
+            if run.font.size and src_run is None:
                 font_size = run.font.size
-                break
+            if run.text.strip() and src_run is None:
+                src_run = run
         run_br = para.add_run()
         br_el = OxmlElement('w:br')
         run_br._r.append(br_el)
@@ -585,6 +627,13 @@ def _translate_doc_titles(doc):
         _apply_korean_font(run_kr)
         if font_size:
             run_kr.font.size = font_size
+        if src_run:
+            if src_run.bold is not None:
+                run_kr.bold = src_run.bold
+            if src_run.italic is not None:
+                run_kr.italic = src_run.italic
+            if src_run.underline is not None:
+                run_kr.underline = src_run.underline
 
     # Also check table cells (addendum docs have no top-level paragraphs)
     for table in doc.tables:
@@ -595,7 +644,8 @@ def _translate_doc_titles(doc):
                 if not kr:
                     continue
                 font_size = _get_cell_font_size(cell)
-                _add_paragraph(cell, kr, font_size)
+                bold, italic, underline = _get_cell_dominant_run_props(cell)
+                _add_paragraph(cell, kr, font_size, bold=bold, italic=italic, underline=underline)
 
 
 def _detect_row_type(text: str):
@@ -732,11 +782,14 @@ def create_bilingual_docx(
 
             font_size  = _get_cell_font_size(content_cell)
             para_style = _get_cell_para_style(content_cell)
+            bold, italic, underline = _get_cell_dominant_run_props(content_cell)
 
             if is_addendum and row_type in ('addendum_concerns', 'addendum_comment_period_sec'):
                 # Append entire Korean block after the last row of this section
+                t_bold, t_italic, t_underline = _get_cell_dominant_run_props(target_cell)
                 for line in korean_lines:
-                    _add_paragraph(target_cell, line, _get_cell_font_size(target_cell), para_style)
+                    _add_paragraph(target_cell, line, _get_cell_font_size(target_cell), para_style,
+                                   bold=t_bold, italic=t_italic, underline=t_underline)
             elif is_addendum and row_type == 'addendum_country_advises':
                 # Insert Korean right after the matching paragraph (right below body text)
                 patterns = ROW_PATTERNS.get(row_type, [])
@@ -750,10 +803,12 @@ def create_bilingual_docx(
                         _insert_paragraph_after_para(matching_para, line, font_size)
                 else:
                     for line in korean_lines:
-                        _add_paragraph(content_cell, line, font_size, para_style)
+                        _add_paragraph(content_cell, line, font_size, para_style,
+                                       bold=bold, italic=italic, underline=underline)
             else:
                 for line in korean_lines:
-                    _add_paragraph(content_cell, line, font_size, para_style)
+                    _add_paragraph(content_cell, line, font_size, para_style,
+                                   bold=bold, italic=italic, underline=underline)
 
             if is_non_english and row_type in ('title', 'description'):
                 _set_cell_bg(content_cell, LIME_RGB)

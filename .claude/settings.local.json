@@ -17,7 +17,8 @@
       "Bash(taskkill /PID 8880 /F)",
       "Bash(netstat -ano)",
       "Bash(cmd /c \"taskkill /PID 1188 /F && taskkill /PID 8880 /F\")",
-      "Bash(cmd /c \"netstat -ano | findstr :5000\")"
+      "Bash(cmd /c \"netstat -ano | findstr :5000\")",
+      "Bash(python\\\\python-3.13.13-embed-amd64\\\\python.exe -c \"import word_writer; print\\('OK'\\)\")"
     ]
   }
 }
