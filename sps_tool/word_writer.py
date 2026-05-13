@@ -150,6 +150,9 @@ def _translate_date_phrase(text: str) -> str:
         r'(?i)(\d+)\s+days?\s+after\s+publication\s+in\s+the\s+official\s+journal\.?',
         lambda m: f'관보 게재일로부터 {m.group(1)}일 후', text)
     text = re.sub(r'(?i)upon publication in the official journal\.?', '관보게재일', text)
+    text = re.sub(r'(?i)the resolution will enter into force upon signature\.?',
+                  '본 결의안은 서명 시 발효예정', text)
+    text = re.sub(r'(?i)\bupon signature\.?', '서명 시 발효예정', text)
     return _translate_date(text)
 
 
@@ -295,6 +298,7 @@ def _row_title(cell_text, t):
 
     lang_m = re.search(r'Language\(s\):\s*([^\n]+)', cell_text, re.IGNORECASE)
     lang_raw = lang_m.group(1).strip() if lang_m else ''
+    lang_raw = re.sub(r'\s+Number of pages[^\n]*', '', lang_raw, flags=re.IGNORECASE).strip()
     if lang_raw:
         parts = re.split(r'\s+and\s+|\s*,\s*|\s*&\s*', lang_raw, flags=re.IGNORECASE)
         kr_parts = [LANG_KR.get(p.strip().lower(), p.strip()) for p in parts if p.strip()]
@@ -307,19 +311,23 @@ def _row_title(cell_text, t):
 
     line = f'통보 문서의 제목: {title_kr}'
     if lang_kr:
-        line += f' 언어: {lang_kr}'
-    if pages:
-        line += f'  페이지수: {pages}'
+        line += f'  언어: {lang_kr}'
 
     urls = re.findall(r'https?://\S+', cell_text)
-    return [line] + urls
+    result = [line] + urls
+    if pages:
+        result.append(f'페이지수: {pages}')
+    return result
 
 
 def _row_description(cell_text, t):
     desc_kr = t.get('내용', '')
     if not desc_kr:
         return []
-    return [f'내용 설명: {desc_kr}']
+    lines = [s.strip() for s in desc_kr.split('\n') if s.strip()]
+    if not lines:
+        return []
+    return [f'내용 설명: {lines[0]}'] + lines[1:]
 
 
 _OBJECTIVE_MOKJEOK_KEYS = ['식품안전', '동물위생', '식물보호', '사람 보호', '영토 보호']
