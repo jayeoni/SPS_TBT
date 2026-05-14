@@ -30,7 +30,9 @@ Always output valid JSON only. No explanation text before or after the JSON."""
 
 
 def _build_user_prompt(parsed: dict, export_items: str, terminology: dict) -> str:
-    term_lines = '\n'.join(f'  {k} → {v}' for k, v in list(terminology.items())[:80])
+    items = list(terminology.items())
+    selected = items[:60] + items[-20:]  # core terms + recently-added agency/product terms
+    term_lines = '\n'.join(f'  {k} → {v}' for k, v in selected)
 
     objectives_str = '; '.join(parsed.get('objectives_korean', [])) or '(확인 필요)'
 
@@ -194,7 +196,7 @@ def _process_with_ollama(parsed: dict, export_items: str, terminology: dict, mod
             {'role': 'user', 'content': user_prompt},
         ],
         'stream': False,
-        'options': {'temperature': 0.1, 'num_predict': 4096},
+        'options': {'temperature': 0.1, 'num_predict': 2048},
     }).encode('utf-8')
 
     for attempt in range(2):  # retry once on timeout (model cold-start)
