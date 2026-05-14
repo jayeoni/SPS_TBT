@@ -337,6 +337,7 @@ def parse_notification(docx_path: str) -> dict:
         'adoption_date_raw':    '',
         'source_language':      'en',
         'other_docs':           '',
+        'objective_text':       '',
         'addendum':             {},
     }
 
@@ -362,6 +363,7 @@ def parse_notification(docx_path: str) -> dict:
         doc, LABEL_PATTERNS['description'])
 
     result['other_docs'] = _extract_field_from_tables(doc, LABEL_PATTERNS['other_docs'])
+    result['objective_text'] = _extract_field_from_tables(doc, LABEL_PATTERNS['objective'])
 
     # ── Dates ──────────────────────────────────────────────────────────────
     result['comment_deadline_raw'] = _extract_field_from_tables(

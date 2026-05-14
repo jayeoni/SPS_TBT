@@ -53,6 +53,7 @@ ROW_PATTERNS = {
 # Used to override unreliable LLM translations for specific agencies.
 KNOWN_AGENCIES = [
     (re.compile(r'state phytosanitary service', re.IGNORECASE), '식물위생청(SFE)'),
+    (re.compile(r'Institute for Agricultural and Livestock Protection and Health|\bIPSA\b', re.IGNORECASE), '농축산물보호위생청(IPSA)'),
     (re.compile(r'ministry of agriculture and livestock', re.IGNORECASE), '농축산부(MAG)'),
 ]
 
@@ -343,17 +344,19 @@ def _row_description(cell_text, t):
 
 _OBJECTIVE_MOKJEOK_KEYS = ['식품안전', '동물위생', '식물보호', '사람 보호', '영토 보호']
 
+
 def _row_objective(cell_text, t):
-    # LLM-derived 목적 is used as fallback for Spanish/Portuguese docs where
-    # English checkbox labels are absent and _checkbox() returns '[  ]'.
-    mokjeok = t.get('목적', '')
+    mokjeok = re.sub(r'\s+', '', t.get('목적', ''))
     parts = []
     for (eng_prefix, kr_label), key in zip(OBJECTIVE_OPTIONS, _OBJECTIVE_MOKJEOK_KEYS):
         cb = _checkbox(cell_text, eng_prefix)
-        if cb == '[  ]' and key in mokjeok:
+        if cb == '[  ]' and re.sub(r'\s+', '', key) in mokjeok:
             cb = '[X]'
         parts.append(f'{cb} {kr_label}')
-    return ['목적 및 근거: ' + ', '.join(parts)]
+    lines = ['목적 및 근거: ' + ', '.join(parts)]
+    if t.get('목적_근거'):
+        lines += [s.strip() for s in t['목적_근거'].split('\n') if s.strip()]
+    return lines
 
 
 def _row_standards(cell_text, t):
@@ -361,6 +364,14 @@ def _row_standards(cell_text, t):
     oie_cb   = _checkbox(cell_text, 'World O')  # matches both Organisation/Organization
     ippc_cb  = _checkbox(cell_text, 'International Plant Protection')
     none_cb  = _checkbox(cell_text, 'None')
+
+    # Spanish/Portuguese fallbacks
+    if oie_cb == '[  ]' and re.search(r'(?:\[[Xx☒]\]|☒)[^\n]*Organizaci[oó]n Mundial', cell_text, re.IGNORECASE):
+        oie_cb = '[X]'
+    if ippc_cb == '[  ]' and re.search(r'(?:\[[Xx☒]\]|☒)[^\n]*Convenci[oó]n Internacional|CIPF', cell_text, re.IGNORECASE):
+        ippc_cb = '[X]'
+    if none_cb == '[  ]' and re.search(r'(?:\[[Xx☒]\]|☒)[^\n]*Ninguna?', cell_text, re.IGNORECASE):
+        none_cb = '[X]'
 
     # Preserve any content written after ISPM/Codex/OIE checkbox lines
     def _after_option(pattern):
@@ -373,7 +384,7 @@ def _row_standards(cell_text, t):
 
     # Detect "Is there a relevant international standard? Yes [ ] No [ ]"
     m_yn = re.search(
-        r'Is there a relevant international standard.*?Yes\s*(\[[\sXx☒]*\])\s*No\s*(\[[\sXx☒]*\])',
+        r'(?:Is there a relevant international standard|Existe alguna norma).*?(?:Yes|S[íi])\s*(\[[\sXx☒]*\])\s*No\s*(\[[\sXx☒]*\])',
         cell_text, re.IGNORECASE | re.DOTALL,
     )
     has_std_yes = '[X]' if m_yn and m_yn.group(1).strip('[] ').lower() in ('x', '☒') else '[  ]'
@@ -381,7 +392,7 @@ def _row_standards(cell_text, t):
 
     # Detect "Does this measure conform to the international standard? Yes [ ] No [ ]"
     m_conf = re.search(
-        r'Does this measure conform.*?Yes\s*(\[[\sXx☒]*\])\s*No\s*(\[[\sXx☒]*\])',
+        r'(?:Does this measure conform|se ajusta).*?(?:Yes|S[íi])\s*(\[[\sXx☒]*\])\s*No\s*(\[[\sXx☒]*\])',
         cell_text, re.IGNORECASE | re.DOTALL,
     )
     conf_yes = '[X]' if m_conf and m_conf.group(1).strip('[] ').lower() in ('x', '☒') else '[  ]'

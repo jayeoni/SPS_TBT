@@ -66,6 +66,7 @@ Title: {parsed.get('title', '')}
 Products covered: {parsed.get('products', '')}
 Regions/countries affected: {parsed.get('regions', '')}
 Objectives (checked): {objectives_str}
+Objective/rationale text: {parsed.get('objective_text', '')}
 Description: {parsed.get('description', '')}
 Other relevant documents: {parsed.get('other_docs', '')}
 Comment deadline (raw): {parsed.get('comment_deadline_raw', '')}
@@ -131,6 +132,7 @@ Return ONLY this JSON object (no other text):
   "해당품목": "Korean product name; keep scientific name in parentheses e.g., 아보카도(Persea americana)",
   "기타문서": "Korean translation of 'Other relevant documents'; omit URLs; translate language notes (e.g., 'available in Spanish' → '스페인어로 이용가능'); empty string if none",
   "목적": "ONLY these exact phrases, semicolons between multiples: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호",
+  "목적_근거": "Korean translation of the objective/rationale free text in 개조식 (endings: ~음/함/됨/임); empty string if no rationale text present",
   "해당국가": "Korean country name or '모든 교역국'",
   "통보국_kr": "Korean name of the notifying member country",
   "담당기관_kr": "Korean name of the agency; keep acronym in parentheses e.g. 동식물위생관리규제청(AGROCALIDAD)",

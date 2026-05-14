@@ -196,7 +196,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
             date_fields['의견마감일'] = '-'
 
         # ── 6. Assemble all Excel fields ───────────────────────────────────
-        is_non_english = llm_result.get('source_language', 'en') != 'en'
+        is_non_english = parsed.get('source_language', 'en') != 'en'
 
         notif_type = ('긴급' if parsed['is_emergency']
                       else ('추가' if parsed['is_addendum'] else '일반'))
