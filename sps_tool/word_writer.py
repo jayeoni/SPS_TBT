@@ -382,14 +382,6 @@ def _row_standards(cell_text, t):
     oie_extra   = _after_option(r'World Organ\w+ for Animal Health')
     ippc_extra  = _after_option(r'International Plant Protection')
 
-    # Detect "Is there a relevant international standard? Yes [ ] No [ ]"
-    m_yn = re.search(
-        r'(?:Is there a relevant international standard|Existe alguna norma).*?(?:Yes|S[íi])\s*(\[[\sXx☒]*\])\s*No\s*(\[[\sXx☒]*\])',
-        cell_text, re.IGNORECASE | re.DOTALL,
-    )
-    has_std_yes = '[X]' if m_yn and m_yn.group(1).strip('[] ').lower() in ('x', '☒') else '[  ]'
-    has_std_no  = '[X]' if m_yn and m_yn.group(2).strip('[] ').lower() in ('x', '☒') else '[  ]'
-
     # Detect "Does this measure conform to the international standard? Yes [ ] No [ ]"
     m_conf = re.search(
         r'(?:Does this measure conform|se ajusta).*?(?:Yes|S[íi])\s*(\[[\sXx☒]*\])\s*No\s*(\[[\sXx☒]*\])',
@@ -398,7 +390,7 @@ def _row_standards(cell_text, t):
     conf_yes = '[X]' if m_conf and m_conf.group(1).strip('[] ').lower() in ('x', '☒') else '[  ]'
     conf_no  = '[X]' if m_conf and m_conf.group(2).strip('[] ').lower() in ('x', '☒') else '[  ]'
 
-    lines = [f'관련 국제기준이 있는가? {has_std_yes} 예  {has_std_no} 아니오  있다면, 해당 기준을 표시']
+    lines = ['관련 국제기준이 있는가? 있다면, 해당 기준을 표시']
     lines.append(f'{codex_cb} 국제식품규격위원회(Codex Alimentarius Commission) [예 ; Codex 규정 또는 관련문서의 제목 또는 문서번호] : {codex_extra}')
     lines.append(f'{oie_cb}  세계동물보건기구(OIE) (예 : 육상동물 또는 수생동물 위생규약, Chapter 번호) :  {oie_extra}')
     ippc_label = f'{ippc_cb} 국제식물보호협약(International Plant Protection Convention) [예: 식물위생조치를 위한 국제 기준(ISPM) 번호] :'
@@ -415,13 +407,7 @@ def _row_other_docs(cell_text, t):
     lines = ['활용 가능한 다른 관련문서 및 언어:']
     doc_kr = t.get('기타문서', '')
     if doc_kr:
-        lines.append(doc_kr)
-    for url in re.findall(r'https?://\S+', cell_text):
-        lines.append(url)
-    lang_m = re.search(r'\(available in ([^)]+)\)', cell_text, re.IGNORECASE)
-    if lang_m:
-        lang_kr = LANG_KR.get(lang_m.group(1).strip().lower(), lang_m.group(1).strip())
-        lines.append(f'({lang_kr}로 이용가능)')
+        lines += [s.strip() for s in doc_kr.split('\n') if s.strip()]
     return lines
 
 
@@ -567,7 +553,7 @@ ADDENDUM_CONCERN_OPTIONS = [
 ]
 
 
-def _insert_paragraph_after_para(para, text, font_size=None):
+def _insert_paragraph_after_para(para, text, font_size=None, *, before=False):
     """Insert a new paragraph with Korean text immediately after para using XML.
     Copies paragraph and run properties (indentation, bold, underline, etc.) from the source."""
     import copy
@@ -621,7 +607,7 @@ def _insert_paragraph_after_para(para, text, font_size=None):
         t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
     r.append(t)
     new_p.append(r)
-    para._p.addnext(new_p)
+    para._p.addprevious(new_p) if before else para._p.addnext(new_p)
 
 
 def _translate_doc_titles(doc):
@@ -863,8 +849,13 @@ def create_bilingual_docx(
                     if anchor_para:
                         _insert_paragraph_after_para(anchor_para, korean_lines[0], font_size)
                     else:
-                        _add_paragraph(content_cell, korean_lines[0], font_size, para_style,
-                                       bold=bold, italic=italic, underline=underline)
+                        # Layout B: content cell has only addresses — insert Korean at the top
+                        first_para = content_cell.paragraphs[0] if content_cell.paragraphs else None
+                        if first_para:
+                            _insert_paragraph_after_para(first_para, korean_lines[0], font_size, before=True)
+                        else:
+                            _add_paragraph(content_cell, korean_lines[0], font_size, para_style,
+                                           bold=bold, italic=italic, underline=underline)
             else:
                 for line in korean_lines:
                     _add_paragraph(content_cell, line, font_size, para_style,
