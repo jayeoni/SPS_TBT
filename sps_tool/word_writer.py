@@ -181,18 +181,29 @@ def _extract_email(text: str) -> str:
 
 
 def _get_cell_style(cell):
-    """Return (font_size, para_style, bold, italic, underline) in a single pass."""
-    font_size = para_style = bold = italic = underline = None
+    """Return (font_size, para_style, bold, italic, underline) in a single pass.
+
+    bold/italic/underline are set only when uniform across all content runs;
+    mixed cells return None for that property so Korean text stays plain.
+    """
+    font_size = para_style = None
+    seen_bold = seen_italic = seen_underline = set()
+
     for para in cell.paragraphs:
         if para_style is None and para.runs:
             para_style = para.style.name
         for run in para.runs:
             if font_size is None and run.font.size:
                 font_size = run.font.size
-            if bold is None and run.text.strip():
-                bold, italic, underline = run.bold, run.italic, run.underline
-        if font_size is not None and para_style is not None and bold is not None:
-            break
+            if run.text.strip():
+                seen_bold.add(run.bold is True)
+                seen_italic.add(run.italic is True)
+                seen_underline.add(run.underline is True)
+
+    # Apply a property only when every content run agrees (all True or all non-True)
+    bold      = True if seen_bold      == {True} else None
+    italic    = True if seen_italic    == {True} else None
+    underline = True if seen_underline == {True} else None
     return font_size, para_style, bold, italic, underline
 
 
