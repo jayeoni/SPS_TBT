@@ -67,13 +67,18 @@ def save_config(cfg: dict):
 
 # ── Terminology ──────────────────────────────────────────────────────────────
 TERMINOLOGY_FILE = BASE_DIR / 'terminology.json'
+_terminology: dict | None = None
 
 
 def load_terminology() -> dict:
-    if TERMINOLOGY_FILE.exists():
-        with open(TERMINOLOGY_FILE, encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+    global _terminology
+    if _terminology is None:
+        if TERMINOLOGY_FILE.exists():
+            with open(TERMINOLOGY_FILE, encoding='utf-8') as f:
+                _terminology = json.load(f)
+        else:
+            _terminology = {}
+    return _terminology
 
 
 # ── Export lookup (loaded once at startup) ────────────────────────────────────
