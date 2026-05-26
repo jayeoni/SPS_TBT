@@ -225,6 +225,10 @@ COUNTRY_KR = {
 }
 
 
+# Pre-sorted longest-first for translate_regions; avoids re-sorting on every call.
+_COUNTRY_KR_SORTED = sorted(COUNTRY_KR.items(), key=lambda x: -len(x[0]))
+
+
 def translate_regions(regions_text: str) -> str:
     """
     Translate the raw 'regions' string from the WTO form to Korean.
@@ -252,8 +256,7 @@ def translate_regions(regions_text: str) -> str:
     for part in parts:
         lower = part.lower()
         matched = None
-        # Longest-match first
-        for eng, kor in sorted(COUNTRY_KR.items(), key=lambda x: -len(x[0])):
+        for eng, kor in _COUNTRY_KR_SORTED:
             if eng in lower:
                 matched = kor
                 break
