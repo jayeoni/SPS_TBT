@@ -118,9 +118,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         log.info('[%s] 파싱 중...', result['filename'])
         parsed = sps_parser.parse_notification(docx_path)
         result['doc_number'] = parsed.get('doc_number', '')
-        result['type'] = '긴급' if parsed['is_emergency'] else (
-            '추가' if parsed['is_addendum'] else '일반'
-        )
+        result['type'] = '긴급' if parsed['is_emergency'] else '일반'
 
         if not result['doc_number']:
             result['error'] = '문서번호를 찾을 수 없습니다. 파일을 확인해주세요.'
@@ -198,8 +196,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         # ── 6. Assemble all Excel fields ───────────────────────────────────
         is_non_english = parsed.get('source_language', 'en') != 'en'
 
-        notif_type = ('긴급' if parsed['is_emergency']
-                      else ('추가' if parsed['is_addendum'] else '일반'))
+        notif_type = '긴급' if parsed['is_emergency'] else '일반'
 
         importance = llm_result.get('중요도', '')
         # Hard rule: third-country restriction → always '-'
