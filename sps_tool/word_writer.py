@@ -842,7 +842,7 @@ def create_bilingual_docx(
                 # Contact details already exist in the original cell — not touched
                 anchor_para = next(
                     (p for p in content_cell.paragraphs if re.search(
-                        r'texts? available from', p.text, re.IGNORECASE)),
+                        r'text[^\n]*available from', p.text, re.IGNORECASE)),
                     None,
                 )
                 if korean_lines:

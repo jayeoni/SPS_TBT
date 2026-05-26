@@ -20,7 +20,7 @@ Your tasks:
 3. Recommend handling based on domestic relevance
 
 Rules for Korean government style:
-- 내용: translate the ENTIRE original description sentence by sentence — do NOT omit, merge, or compress any part. Every sentence must end in ~음/함/됨/임/어야 함 style. NEVER use ~습니다/~합니다/~입니다. Preserve numbered lists and paragraph breaks with \n.
+- 내용: translate the ENTIRE original description sentence by sentence — do NOT omit, merge, compress, or stop early. Every single sentence must be translated in full, including all regulation names, document numbers, and dates. Every sentence must end in ~음/함/됨/임/어야 함 style. NEVER use ~습니다/~합니다/~입니다. Preserve numbered lists and paragraph breaks with \n.
 - 주간보고: write as a single concise action phrase, like "브라질산 아보카도 식물체의 수입검역요건 개정"
 - Include scientific names in 국문명(학명) format (e.g., 신선 딸기(Fragaria ananassa))
 - Use standard institutional Korean terms, not casual translations
@@ -130,7 +130,7 @@ HPAI 발생에 따른 프랑스 루아르아틀랑티크(Loire-Atlantique)산 �
 Return ONLY this JSON object (no other text):
 {{
   "제목": "Full verbatim Korean translation of the title; include scientific name as 국문명(학명) if present",
-  "내용": "Translate EVERY sentence of the description into Korean 개조식 — do NOT skip, merge, or shorten any sentence. Endings: ~음/함/됨/임/어야 함. Never ~습니다/~합니다. Keep numbered lists. Use \\n between items.",
+  "내용": "Translate EVERY sentence of the description into Korean 개조식. CRITICAL: translate the COMPLETE text — do NOT stop mid-sentence, do NOT omit any sentence, do NOT abbreviate. Every regulation name, document number, and date must appear. Endings: ~음/함/됨/임/어야 함. Never ~습니다/~합니다. Keep numbered lists. Use \\n between items.",
   "해당품목": "Korean product name; keep scientific name in parentheses e.g., 아보카도(Persea americana)",
   "기타문서": "Korean translation of 'Other relevant documents'; omit URLs; translate language notes (e.g., 'available in Spanish' → '스페인어로 이용가능'); empty string if none",
   "목적": "ONLY these exact phrases, semicolons between multiples: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호",
@@ -179,7 +179,7 @@ def _process_with_anthropic(parsed: dict, export_items: str, terminology: dict, 
     user_prompt = _build_user_prompt(parsed, export_items, terminology)
     message = client.messages.create(
         model=MODEL_ANTHROPIC,
-        max_tokens=2048,
+        max_tokens=4096,
         system=SYSTEM_PROMPT,
         messages=[{'role': 'user', 'content': user_prompt}],
     )
@@ -196,7 +196,7 @@ def _process_with_ollama(parsed: dict, export_items: str, terminology: dict, mod
             {'role': 'user', 'content': user_prompt},
         ],
         'stream': False,
-        'options': {'temperature': 0.1, 'num_predict': 2048},
+        'options': {'temperature': 0.1, 'num_predict': 4096},
     }).encode('utf-8')
 
     for attempt in range(2):  # retry once on timeout (model cold-start)
