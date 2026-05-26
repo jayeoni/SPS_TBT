@@ -3,6 +3,7 @@ Bilingual Word document generator.
 Translates all 13 rows of the WTO SPS notification form following the
 exact format used in reference translated files (26.3월 SPS 통보문_금영★).
 """
+import copy
 import re
 import shutil
 from pathlib import Path
@@ -568,7 +569,6 @@ ADDENDUM_CONCERN_OPTIONS = [
 def _insert_paragraph_after_para(para, text, font_size=None, *, before=False):
     """Insert a new paragraph with Korean text immediately after para using XML.
     Copies paragraph and run properties (indentation, bold, underline, etc.) from the source."""
-    import copy
     # Only apply bold/italic/underline when ALL content runs share that property;
     # mixed paragraphs (e.g. bold label + plain body) should produce plain Korean text.
     non_empty_runs = [r for r in para.runs if r.text.strip()]
