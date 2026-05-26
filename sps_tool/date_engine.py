@@ -41,10 +41,11 @@ def _parse_explicit_date(text: str):
 
     # DD Month YYYY  or  Month DD, YYYY
     patterns = [
-        r'(\d{1,2})[/ .](\d{1,2})[/ .](\d{4})',          # DD/MM/YYYY or MM/DD/YYYY
-        r'(\d{1,2})\s+(\w+)\s+(\d{4})',                    # 16 March 2026
-        r'(\w+)\s+(\d{1,2}),?\s+(\d{4})',                  # March 16, 2026
-        r'(\d{4})[/-](\d{2})[/-](\d{2})',                  # 2026-03-16 (ISO)
+        r'(\d{1,2})[/ .](\d{1,2})[/ .](\d{4})',                        # DD/MM/YYYY or MM/DD/YYYY
+        r'(\d{1,2})\s+de\s+(\w+)\s+(?:de\s+)?(\d{4})',                 # 13 de mayo de 2026
+        r'(\d{1,2})\s+(\w+)\s+(\d{4})',                                 # 16 March 2026
+        r'(\w+)\s+(\d{1,2}),?\s+(\d{4})',                               # March 16, 2026
+        r'(\d{4})[/-](\d{2})[/-](\d{2})',                               # 2026-03-16 (ISO)
     ]
 
     for pat in patterns:
@@ -80,8 +81,13 @@ def _parse_formula(text: str, base_date: date):
     """
     text_lower = text.lower()
 
-    # N days
+    # N days (English)
     m = re.search(r'(\d+)\s+(?:calendar\s+)?days?\s+(?:from|after|following)', text_lower)
+    if m:
+        return base_date + timedelta(days=int(m.group(1)))
+
+    # N días (Spanish) / N dias (Portuguese)
+    m = re.search(r'(\d+)\s+d[ií]as?', text_lower)
     if m:
         return base_date + timedelta(days=int(m.group(1)))
 
