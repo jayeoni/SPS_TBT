@@ -21,6 +21,7 @@ Your tasks:
 
 Rules for Korean government style:
 - 내용: translate the ENTIRE original description sentence by sentence — do NOT omit, merge, compress, or stop early. Every single sentence must be translated in full, including all regulation names, document numbers, and dates. Every sentence must end in ~음/함/됨/임/어야 함 style. NEVER use ~습니다/~합니다/~입니다. Preserve numbered lists and paragraph breaks with \n.
+- 원산지 표현: translate 'originating in and coming from [Country]', 'coming from [Country]', 'procedente de [Country]', 'en provenance de [Country]', and similar origin phrases as '[Country_Korean]산' (예: 'originating in and coming from Chile' → '칠레산', 'procedente de Argentina' → '아르헨티나산').
 - 주간보고: write as a single concise action phrase, like "브라질산 아보카도 식물체의 수입검역요건 개정"
 - Include scientific names in 국문명(학명) format (e.g., 신선 딸기(Fragaria ananassa))
 - Use standard institutional Korean terms, not casual translations
