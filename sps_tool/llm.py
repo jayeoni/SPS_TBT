@@ -129,6 +129,7 @@ HPAI 발생에 따른 프랑스 루아르아틀랑티크(Loire-Atlantique)산 �
 --- OUTPUT FORMAT ---
 Return ONLY this JSON object (no other text):
 {{
+  "지방정부_kr": "Korean name of the local/regional government from field 1 (e.g. '캘리포니아 주', '안달루시아 자치주'); empty string if field 1 has no local government text",
   "제목": "Full verbatim Korean translation of the title; include scientific name as 국문명(학명) if present",
   "내용": "Translate EVERY sentence of the description into Korean 개조식. CRITICAL: translate the COMPLETE text — do NOT stop mid-sentence, do NOT omit any sentence, do NOT abbreviate. Every regulation name, document number, and date must appear. Endings: ~음/함/됨/임/어야 함. Never ~습니다/~합니다. Keep numbered lists. Use \\n between items.",
   "해당품목": "Korean product name; keep scientific name in parentheses e.g., 아보카도(Persea americana)",

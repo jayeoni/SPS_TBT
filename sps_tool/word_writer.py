@@ -256,9 +256,21 @@ def _row_notifying_member(cell_text, t):
     country_kr = t.get('통보국_kr', '')
     if not country_kr:
         return []
+    local_label = '적용 가능할 경우, 관련 지방 정부의 명칭 기재:'
+    local_m = re.search(
+        r'(?:if applicable.*?involved|local government)[^\n]*:\s*([^\n]+)',
+        cell_text, re.IGNORECASE,
+    )
+    local_raw = local_m.group(1).strip() if local_m else ''
+    if local_raw:
+        local_kr = t.get('지방정부_kr', '') or local_raw
+        return [
+            f'통보 회원국: {country_kr}',
+            f'{local_label} {local_kr}',
+        ]
     return [
         f'통보 회원국: {country_kr}',
-        '적용 가능할 경우, 관련 지방 정부의 명칭 기재:',
+        local_label,
     ]
 
 
@@ -324,12 +336,11 @@ def _row_title(cell_text, t):
     line = f'통보 문서의 제목: {title_kr}'
     if lang_kr:
         line += f'  언어: {lang_kr}'
+    if pages:
+        line += f'  페이지수: {pages}'
 
     urls = re.findall(r'https?://\S+', cell_text)
-    result = [line] + urls
-    if pages:
-        result.append(f'페이지수: {pages}')
-    return result
+    return [line] + urls
 
 
 def _row_description(cell_text, t):
@@ -384,11 +395,12 @@ def _row_standards(cell_text, t):
 
     # Detect "Does this measure conform to the international standard? Yes [ ] No [ ]"
     m_conf = re.search(
-        r'(?:Does this measure conform|se ajusta).*?(?:Yes|S[íi])\s*(\[[\sXx☒]*\])\s*No\s*(\[[\sXx☒]*\])',
+        r'(?:Does this measure conform|se ajusta|está em conformidade).*?'
+        r'(?:Yes|S[íi]|예)\s*(\[[\sXx☒☑✓]*\])\s*(?:No|아니오)\s*(\[[\sXx☒☑✓ ]*\])',
         cell_text, re.IGNORECASE | re.DOTALL,
     )
-    conf_yes = '[X]' if m_conf and m_conf.group(1).strip('[] ').lower() in ('x', '☒') else '[  ]'
-    conf_no  = '[X]' if m_conf and m_conf.group(2).strip('[] ').lower() in ('x', '☒') else '[  ]'
+    conf_yes = '[X]' if m_conf and re.search(r'[Xx☒☑✓]', m_conf.group(1)) else '[  ]'
+    conf_no  = '[X]' if m_conf and re.search(r'[Xx☒☑✓]', m_conf.group(2)) else '[  ]'
 
     lines = ['관련 국제기준이 있는가? 있다면, 해당 기준을 표시']
     lines.append(f'{codex_cb} 국제식품규격위원회(Codex Alimentarius Commission) [예 ; Codex 규정 또는 관련문서의 제목 또는 문서번호] : {codex_extra}')
