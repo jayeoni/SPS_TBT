@@ -154,6 +154,9 @@ def write_fields(
     """
     if col_map is None:
         col_map = COL
+    # For non-English source docs, also overwrite product/date fields that may
+    # have been pre-filled with the source language (Spanish/Portuguese) text
+    force_write = FORCE_WRITE_FIELDS | ({'해당품목', '발효일'} if is_non_english else set())
     for field_name in WRITABLE_FIELDS:
         if field_name not in fields:
             continue
@@ -163,9 +166,7 @@ def write_fields(
 
         cell = ws.cell(row=row_idx, column=col_idx)
 
-        # Skip cells that already have a non-empty value,
-        # except 통보국 which is overwritten to replace pre-filled English names
-        if field_name not in FORCE_WRITE_FIELDS and cell.value not in (None, ''):
+        if field_name not in force_write and cell.value not in (None, ''):
             continue
 
         value = fields[field_name]
