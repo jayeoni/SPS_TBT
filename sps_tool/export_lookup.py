@@ -169,10 +169,8 @@ class ExportLookup:
         is_uncertain = False
 
         if chapters:
-            chapter_pattern = '|'.join(f'^{c}' for c in chapters)
-            filtered = country_df[
-                country_df['HSCODE'].str.match(chapter_pattern, na=False)
-            ]
+            chapter_set = set(chapters)
+            filtered = country_df[country_df['HSCODE'].str[:2].isin(chapter_set)]
         else:
             # No clear HS hint → use broader category if available
             filtered = country_df
