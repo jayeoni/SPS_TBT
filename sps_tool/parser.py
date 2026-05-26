@@ -172,7 +172,67 @@ def _extract_field_from_tables(doc, label_patterns):
     return ''
 
 
-def _extract_objectives(doc):
+# Fields extracted in one pass — covers all fields called individually in parse_notification
+_BULK_EXTRACT_FIELDS = [
+    'notifying_member', 'agency', 'products', 'regions',
+    'title', 'description', 'objective', 'other_docs',
+    'comment_deadline', 'entry_force', 'adoption_date',
+]
+
+
+def _extract_all_fields(doc) -> dict:
+    """
+    Single table-scan extraction for all labeled fields.
+    Returns a dict keyed by field name (same keys as LABEL_PATTERNS).
+    Replaces 11 individual _extract_field_from_tables calls with one pass.
+    """
+    label_map = {k: LABEL_PATTERNS[k] for k in _BULK_EXTRACT_FIELDS}
+    results = {k: '' for k in label_map}
+    remaining = set(label_map.keys())
+
+    for table in doc.tables:
+        if not remaining:
+            break
+        for row in table.rows:
+            if not remaining:
+                break
+            cells = _unique_cells(row)
+            if len(cells) < 2:
+                continue
+            content_cell = cells[-1]
+            content_text = _cell_text(content_cell)
+            if not content_text:
+                continue
+
+            first_lower = content_text.split('\n')[0][:150].lower()
+            found = set()
+
+            for field_name in list(remaining):
+                patterns = label_map[field_name]
+                # Layout A: label embedded at start of last cell
+                if any(p in first_lower for p in patterns):
+                    colon_pos = content_text.find(':')
+                    results[field_name] = (
+                        content_text[colon_pos + 1:].strip() if colon_pos != -1
+                        else content_text
+                    )
+                    found.add(field_name)
+                    continue
+                # Layout B: label in an earlier cell
+                for cell in cells[:-1]:
+                    ct = _cell_text(cell)
+                    if _match_label(ct, patterns):
+                        if content_text and len(content_text) > 1 and content_text != ct:
+                            results[field_name] = content_text
+                            found.add(field_name)
+                        break
+
+            remaining -= found
+
+    return results
+
+
+def _extract_objectives(full_text: str) -> list:
     """
     Find checked objectives ([X] or ☒ markers) and return Korean phrases.
     Searches the full document text for a checked mark immediately before each
@@ -180,7 +240,6 @@ def _extract_objectives(doc):
     (English layout) or all in one cell (Spanish/Portuguese layout).
     """
     checked = []
-    full_text = _all_text(doc)
     for key, kor_val in OBJECTIVE_MAP.items():
         pattern = r'(?:\[x\]|☒)\s*' + re.escape(key)
         if re.search(pattern, full_text, re.IGNORECASE) and kor_val not in checked:
@@ -188,29 +247,26 @@ def _extract_objectives(doc):
     return checked
 
 
-def _extract_regions(doc):
+def _extract_regions(regions_raw: str, full_text: str) -> str:
     """
-    Extract the regions/countries field. Returns '모든 교역국' if all trading
-    partners is checked, otherwise returns specific country names.
+    Determine final regions value from pre-extracted raw field and full text.
+    Returns '모든 교역국' if all trading partners is checked, otherwise
+    returns specific country names or the raw fallback.
     Handles English and Spanish WTO notification forms.
     """
-    regions_raw = _extract_field_from_tables(doc, LABEL_PATTERNS['regions'])
-
-    all_text = _all_text(doc)
-
     # English / Korean: all trading partners
-    if re.search(r'\[x\].*?all trading partners', all_text, re.IGNORECASE | re.DOTALL):
+    if re.search(r'\[x\].*?all trading partners', full_text, re.IGNORECASE | re.DOTALL):
         return '모든 교역국'
-    if re.search(r'\[x\].*?모든 교역국', all_text, re.DOTALL):
+    if re.search(r'\[x\].*?모든 교역국', full_text, re.DOTALL):
         return '모든 교역국'
     # Spanish: "Todos los interlocutores comerciales"
-    if re.search(r'\[x\].*?todos los interlocutores', all_text, re.IGNORECASE | re.DOTALL):
+    if re.search(r'\[x\].*?todos los interlocutores', full_text, re.IGNORECASE | re.DOTALL):
         return '모든 교역국'
 
     # English: specific regions
     specific_match = re.search(
         r'\[x\][^\n]*?specific regions?(?:\s+or\s+countries?)?\s*:\s*([^\n\[]+)',
-        all_text, re.IGNORECASE
+        full_text, re.IGNORECASE
     )
     if specific_match:
         return specific_match.group(1).strip()
@@ -218,7 +274,7 @@ def _extract_regions(doc):
     # Spanish: "Regiones o países específicos: [country]"
     specific_match = re.search(
         r'\[x\][^\n]*?espec[íi]ficos\s*:\s*([^\n\[]+)',
-        all_text, re.IGNORECASE
+        full_text, re.IGNORECASE
     )
     if specific_match:
         return specific_match.group(1).strip()
@@ -349,32 +405,24 @@ def parse_notification(docx_path: str) -> dict:
     result['is_emergency'] = type_flags['is_emergency']
     result['is_addendum']  = type_flags['is_addendum']
 
-    # ── Field extraction ───────────────────────────────────────────────────
-    result['notifying_member'] = _extract_field_from_tables(
-        doc, LABEL_PATTERNS['notifying_member'])
-    result['agency'] = _extract_field_from_tables(
-        doc, LABEL_PATTERNS['agency'])
-    result['products'] = _extract_field_from_tables(
-        doc, LABEL_PATTERNS['products'])
-    result['regions'] = _extract_regions(doc)
-    result['title'] = _extract_field_from_tables(
-        doc, LABEL_PATTERNS['title'])
-    result['description'] = _extract_field_from_tables(
-        doc, LABEL_PATTERNS['description'])
+    # ── Field extraction (single pass over all tables) ─────────────────────
+    extracted = _extract_all_fields(doc)
+    result['notifying_member']     = extracted['notifying_member']
+    result['agency']               = extracted['agency']
+    result['products']             = extracted['products']
+    result['title']                = extracted['title']
+    result['description']          = extracted['description']
+    result['objective_text']       = extracted['objective']
+    result['other_docs']           = extracted['other_docs']
+    result['comment_deadline_raw'] = extracted['comment_deadline']
+    result['entry_force_raw']      = extracted['entry_force']
+    result['adoption_date_raw']    = extracted['adoption_date']
 
-    result['other_docs'] = _extract_field_from_tables(doc, LABEL_PATTERNS['other_docs'])
-    result['objective_text'] = _extract_field_from_tables(doc, LABEL_PATTERNS['objective'])
-
-    # ── Dates ──────────────────────────────────────────────────────────────
-    result['comment_deadline_raw'] = _extract_field_from_tables(
-        doc, LABEL_PATTERNS['comment_deadline'])
-    result['entry_force_raw'] = _extract_field_from_tables(
-        doc, LABEL_PATTERNS['entry_force'])
-    result['adoption_date_raw'] = _extract_field_from_tables(
-        doc, LABEL_PATTERNS['adoption_date'])
+    # ── Regions and objectives use the already-computed full_text ──────────
+    result['regions'] = _extract_regions(extracted['regions'], full_text)
 
     # ── Objectives (checkboxes) ────────────────────────────────────────────
-    result['objectives_korean'] = _extract_objectives(doc)
+    result['objectives_korean'] = _extract_objectives(full_text)
 
     # ── Language detection ────────────────────────────────────────────────
     detect_text = result['description'] or result['title'] or result['products']
