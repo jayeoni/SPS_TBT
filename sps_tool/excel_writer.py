@@ -48,7 +48,7 @@ WRITABLE_FIELDS = [
 
 # These fields are always overwritten even if the cell already has a value
 # (e.g., 통보국 may be pre-filled with the English name from WTO)
-FORCE_WRITE_FIELDS = {'통보국'}
+FORCE_WRITE_FIELDS = {'통보국', '통보유형'}
 
 
 def _detect_col_map(ws) -> dict:
@@ -156,7 +156,7 @@ def write_fields(
         col_map = COL
     # For non-English source docs, also overwrite product/date fields that may
     # have been pre-filled with the source language (Spanish/Portuguese) text
-    force_write = FORCE_WRITE_FIELDS | ({'해당품목', '발효일'} if is_non_english else set())
+    force_write = FORCE_WRITE_FIELDS | ({'해당품목', '목적', '발효일'} if is_non_english else set())
     for field_name in WRITABLE_FIELDS:
         if field_name not in fields:
             continue
