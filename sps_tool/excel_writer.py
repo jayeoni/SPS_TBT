@@ -36,9 +36,25 @@ COL = {
     '검토메모':   20,  # reviewer notes
 }
 
-YELLOW_FILL = PatternFill('solid', fgColor='FFFF00')
-LIME_FILL   = PatternFill('solid', fgColor='CCFF99')
-NO_FILL     = PatternFill('none')
+YELLOW_FILL  = PatternFill('solid', fgColor='FFFF00')
+LIME_FILL    = PatternFill('solid', fgColor='CCFF99')
+NO_FILL      = PatternFill('none')
+_LIME_RGBS   = frozenset({'FFCCFF99', '00CCFF99', 'CCFF99'})  # openpyxl may include alpha prefix
+
+
+def _has_korean(text: str) -> bool:
+    """Return True if text contains any Hangul characters."""
+    return bool(re.search(r'[가-힣ᄀ-ᇿ㄰-㆏]', text))
+
+
+def _is_lime_cell(cell) -> bool:
+    """Return True if cell has a lime (CCFF99) solid background fill."""
+    try:
+        fill = cell.fill
+        return fill.patternType == 'solid' and fill.fgColor.rgb.upper() in _LIME_RGBS
+    except Exception:
+        return False
+
 
 # Fields the tool writes (skips pre-filled identification fields)
 WRITABLE_FIELDS = [
@@ -167,7 +183,12 @@ def write_fields(
         cell = ws.cell(row=row_idx, column=col_idx)
 
         if field_name not in force_write and cell.value not in (None, ''):
-            continue
+            # Lime cells pre-filled with non-Korean text (e.g. Spanish from WTO portal)
+            # are treated as unfilled — overwrite with the tool's Korean output.
+            if _is_lime_cell(cell) and not _has_korean(str(cell.value)):
+                pass  # fall through to write
+            else:
+                continue
 
         value = fields[field_name]
         if value is None:
