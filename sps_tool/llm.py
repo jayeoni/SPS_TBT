@@ -113,6 +113,10 @@ GMO/LMO: 사료, 식물체, 종자, 식품
 축산물: 위생·안전, 품질
 수산물: 위생품질
 
+--- 제목 TRANSLATION EXAMPLES (match this structure for resolution titles) ---
+Resolution No. 175-2026-IPSA establishing phytosanitary requirements for the importation of fresh pears (Pyrus communis) originating in Peru → 페루산 신선한 배(Pyrus communis) 수입에 대한 식물검역요건을 규정하는 결의안 제175-2026-IPSA호
+Resolution No. 159-2026-IPSA establishing phytosanitary requirements for the importation of unmanufactured tobacco (Nicotiana tabacum) originating in the United States → 미국산 담배(Nicotiana tabacum) 수입에 대한 식물검역요건을 규정하는 결의안 제159-2026-IPSA호
+
 --- 주간보고 EXAMPLES (match these styles) ---
 벨기에산 번식용 옥수수(Zea mays) 종자의 수입검역요건 발효
 아르헨티나산 벳지(Vicia villosa) 종자의 수입검역요건(안) 제정
@@ -135,8 +139,8 @@ Return ONLY this JSON object (no other text):
   "내용": "FAITHFUL word-for-word translation of EVERY sentence into Korean 개조식. CRITICAL: translate the COMPLETE text — every clause, condition, requirement, species name, document number, and date must appear in Korean. Do NOT omit, merge, compress, or paraphrase any part. Endings: ~음/함/됨/임/어야 함. Never ~습니다/~합니다. Keep numbered lists. Use \\n between items. If an input line starts with [B], keep [B] at the start of the corresponding Korean line.",
   "해당품목": "Korean product name; keep scientific name in parentheses e.g., 아보카도(Persea americana)",
   "기타문서": "Korean translation of 'Other relevant documents'; omit URLs; translate language notes (e.g., 'available in Spanish' → '스페인어로 이용가능'); empty string if none",
-  "목적": "ONLY these exact phrases, semicolons between multiples: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호",
-  "목적_근거": "Korean translation of the objective/rationale free text in 개조식 (endings: ~음/함/됨/임); empty string if no rationale text present",
+  "목적": "Output ONLY the objectives that are explicitly checked in 'Objectives (checked)' input. Do NOT infer from the description or notification content. Use only these exact phrases, semicolons between multiples: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호. If no objectives are confirmed checked, output empty string.",
+  "목적_근거": "Korean 개조식 translation of ONLY the free-text rationale from the 'Objective/rationale text' input field (endings: ~음/함/됨/임). Output empty string if that field is empty or contains only checkboxes. Do NOT include any content from the Description field.",
   "해당국가": "Korean country name or '모든 교역국'",
   "통보국_kr": "Korean name of the notifying member country",
   "담당기관_kr": "Korean name of the agency; keep acronym in parentheses e.g. 동식물위생관리규제청(AGROCALIDAD)",

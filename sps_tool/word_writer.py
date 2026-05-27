@@ -336,9 +336,9 @@ def _row_title(cell_text, t):
 
     line = f'통보 문서의 제목: {title_kr}'
     if lang_kr:
-        line += f'  언어: {lang_kr}'
+        line += f' 언어: {lang_kr}'
     if pages:
-        line += f'  페이지수: {pages}'
+        line += f' 페이지수: {pages}'
 
     urls = re.findall(r'https?://\S+', cell_text)
     return [line] + urls
@@ -348,26 +348,39 @@ def _row_description(cell_text, t):
     desc_kr = t.get('내용', '')
     if not desc_kr:
         return []
-    lines = [s.strip() for s in desc_kr.split('\n') if s.strip()]
+    lines = []
+    for s in desc_kr.split('\n'):
+        s = s.strip()
+        if not s:
+            continue
+        # Strip any [B] markers — bold is applied from original paragraphs, not LLM markers
+        if s.startswith('[B]'):
+            s = s[3:]
+        lines.append(s)
     if not lines:
         return []
-    first = lines[0]
-    # Preserve [B] bold marker on the first line so the caller can apply bold to the label too
-    if first.startswith('[B]'):
-        return [f'[B]내용 설명: {first[3:]}'] + lines[1:]
-    return [f'내용 설명: {first}'] + lines[1:]
+    return [f'내용 설명: {lines[0]}'] + lines[1:]
 
 
-_OBJECTIVE_MOKJEOK_KEYS = ['식품안전', '동물위생', '식물보호', '사람 보호', '영토 보호']
+# Spanish/Portuguese fallback patterns for objective checkboxes (one per OBJECTIVE_OPTIONS entry)
+_OBJECTIVE_ES_PATTERNS = [
+    r'inocuidad de los alimentos|inocuidade dos alimentos',
+    r'sanidad animal|sa[uú]de animal',
+    r'preservaci[oó]n de los vegetales|preserva[cç][aã]o dos vegetais',
+    r'protecci[oó]n de la salud|prote[cç][aã]o das pessoas|prote[cç][aã]o da sa[uú]de',
+    r'protecci[oó]n del territorio|prote[cç][aã]o do territ[oó]rio',
+]
 
 
 def _row_objective(cell_text, t):
-    mokjeok = re.sub(r'\s+', '', t.get('목적', ''))
     parts = []
-    for (eng_prefix, kr_label), key in zip(OBJECTIVE_OPTIONS, _OBJECTIVE_MOKJEOK_KEYS):
+    for (eng_prefix, kr_label), es_pat in zip(OBJECTIVE_OPTIONS, _OBJECTIVE_ES_PATTERNS):
         cb = _checkbox(cell_text, eng_prefix)
-        if cb == '[  ]' and re.sub(r'\s+', '', key) in mokjeok:
-            cb = '[X]'
+        # Spanish/Portuguese fallback: look for [X]/☒ before the Spanish/PT equivalent text
+        if cb == '[  ]':
+            if re.search(r'(?:\[[Xx☒]\]|☒)[^\n]*(?:' + es_pat + ')',
+                         cell_text, re.IGNORECASE):
+                cb = '[X]'
         parts.append(f'{cb} {kr_label}')
     lines = ['목적 및 근거: ' + ', '.join(parts)]
     if t.get('목적_근거'):
@@ -873,13 +886,33 @@ def create_bilingual_docx(
                             _add_paragraph(content_cell, korean_lines[0], font_size, para_style,
                                            bold=bold, italic=italic, underline=underline)
             elif row_type == 'description':
-                # Apply per-line bold from [B] markers emitted by the LLM.
-                # [B] at the start of a line means that paragraph was bold in the original source.
-                for line in korean_lines:
-                    is_bold = line.startswith('[B]')
-                    text = line[3:] if is_bold else line
-                    _add_paragraph(content_cell, text, font_size, para_style,
-                                   bold=True if is_bold else None,
+                # Build a bold-per-paragraph map directly from the original cell.
+                # Smaller LLMs don't reliably preserve [B] markers, so we map by
+                # paragraph index instead of relying on LLM output.
+                orig_bold = []
+                for para in content_cell.paragraphs:
+                    if not para.text.strip():
+                        continue
+                    non_empty_runs = [r for r in para.runs if r.text.strip()]
+                    if not non_empty_runs:
+                        orig_bold.append(False)
+                        continue
+                    run_bold = all(r.bold is True for r in non_empty_runs)
+                    if not run_bold:
+                        # Also check paragraph-level rPr bold (w:pPr/w:rPr/w:b)
+                        pPr = para._p.find(qn('w:pPr'))
+                        if pPr is not None:
+                            rPr_el = pPr.find(qn('w:rPr'))
+                            if rPr_el is not None:
+                                b_el = rPr_el.find(qn('w:b'))
+                                if b_el is not None:
+                                    val = b_el.get(qn('w:val'), '')
+                                    run_bold = val not in ('false', '0', 'off')
+                    orig_bold.append(run_bold)
+                for i, line in enumerate(korean_lines):
+                    line_bold = orig_bold[i] if i < len(orig_bold) else None
+                    _add_paragraph(content_cell, line, font_size, para_style,
+                                   bold=True if line_bold else None,
                                    italic=italic, underline=underline)
             else:
                 for line in korean_lines:
