@@ -20,7 +20,7 @@ Your tasks:
 3. Recommend handling based on domestic relevance
 
 Rules for Korean government style:
-- 내용: translate the ENTIRE original description sentence by sentence — do NOT omit, merge, compress, or stop early. Every single sentence must be translated in full, including all regulation names, document numbers, and dates. Every sentence must end in ~음/함/됨/임/어야 함 style. NEVER use ~습니다/~합니다/~입니다. Preserve numbered lists and paragraph breaks with \n.
+- 내용: FAITHFUL word-for-word translation of the ENTIRE original description. Translate every sentence, clause, condition, requirement, and specification exactly as written — do NOT omit, merge, compress, paraphrase, or stop early. Every single clause must appear in Korean, including all regulation names, document numbers, species names, and dates. Every sentence must end in ~음/함/됨/임/어야 함 style. NEVER use ~습니다/~합니다/~입니다. Preserve numbered lists and paragraph breaks with \n. Lines in the input starting with [B] are bold in the original source; keep [B] at the start of those lines in the Korean output.
 - 원산지 표현: translate 'originating in and coming from [Country]', 'coming from [Country]', 'procedente de [Country]', 'en provenance de [Country]', and similar origin phrases as '[Country_Korean]산' (예: 'originating in and coming from Chile' → '칠레산', 'procedente de Argentina' → '아르헨티나산').
 - 주간보고: write as a single concise action phrase, like "브라질산 아보카도 식물체의 수입검역요건 개정"
 - Include scientific names in 국문명(학명) format (e.g., 신선 딸기(Fragaria ananassa))
@@ -132,7 +132,7 @@ Return ONLY this JSON object (no other text):
 {{
   "지방정부_kr": "Korean name of the local/regional government from field 1 (e.g. '캘리포니아 주', '안달루시아 자치주'); empty string if field 1 has no local government text",
   "제목": "Full verbatim Korean translation of the title; include scientific name as 국문명(학명) if present",
-  "내용": "Translate EVERY sentence of the description into Korean 개조식. CRITICAL: translate the COMPLETE text — do NOT stop mid-sentence, do NOT omit any sentence, do NOT abbreviate. Every regulation name, document number, and date must appear. Endings: ~음/함/됨/임/어야 함. Never ~습니다/~합니다. Keep numbered lists. Use \\n between items.",
+  "내용": "FAITHFUL word-for-word translation of EVERY sentence into Korean 개조식. CRITICAL: translate the COMPLETE text — every clause, condition, requirement, species name, document number, and date must appear in Korean. Do NOT omit, merge, compress, or paraphrase any part. Endings: ~음/함/됨/임/어야 함. Never ~습니다/~합니다. Keep numbered lists. Use \\n between items. If an input line starts with [B], keep [B] at the start of the corresponding Korean line.",
   "해당품목": "Korean product name; keep scientific name in parentheses e.g., 아보카도(Persea americana)",
   "기타문서": "Korean translation of 'Other relevant documents'; omit URLs; translate language notes (e.g., 'available in Spanish' → '스페인어로 이용가능'); empty string if none",
   "목적": "ONLY these exact phrases, semicolons between multiples: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호",

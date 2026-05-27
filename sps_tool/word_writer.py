@@ -351,7 +351,11 @@ def _row_description(cell_text, t):
     lines = [s.strip() for s in desc_kr.split('\n') if s.strip()]
     if not lines:
         return []
-    return [f'내용 설명: {lines[0]}'] + lines[1:]
+    first = lines[0]
+    # Preserve [B] bold marker on the first line so the caller can apply bold to the label too
+    if first.startswith('[B]'):
+        return [f'[B]내용 설명: {first[3:]}'] + lines[1:]
+    return [f'내용 설명: {first}'] + lines[1:]
 
 
 _OBJECTIVE_MOKJEOK_KEYS = ['식품안전', '동물위생', '식물보호', '사람 보호', '영토 보호']
@@ -868,6 +872,15 @@ def create_bilingual_docx(
                         else:
                             _add_paragraph(content_cell, korean_lines[0], font_size, para_style,
                                            bold=bold, italic=italic, underline=underline)
+            elif row_type == 'description':
+                # Apply per-line bold from [B] markers emitted by the LLM.
+                # [B] at the start of a line means that paragraph was bold in the original source.
+                for line in korean_lines:
+                    is_bold = line.startswith('[B]')
+                    text = line[3:] if is_bold else line
+                    _add_paragraph(content_cell, text, font_size, para_style,
+                                   bold=True if is_bold else None,
+                                   italic=italic, underline=underline)
             else:
                 for line in korean_lines:
                     _add_paragraph(content_cell, line, font_size, para_style,

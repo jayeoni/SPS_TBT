@@ -180,6 +180,56 @@ _BULK_EXTRACT_FIELDS = [
 ]
 
 
+def _extract_description_with_bold(doc) -> str:
+    """
+    Extract the description field paragraph by paragraph, prefixing each
+    paragraph whose runs are ALL bold with '[B]'.  Returns joined lines.
+    Falls back to '' so the caller can use the plain-text extraction.
+    """
+    desc_patterns = LABEL_PATTERNS['description']
+    for table in doc.tables:
+        for row in table.rows:
+            cells = _unique_cells(row)
+            if len(cells) < 2:
+                continue
+            content_cell = cells[-1]
+            content_text = _cell_text(content_cell)
+            if not content_text:
+                continue
+
+            first_line = content_text.split('\n')[0][:150].lower()
+            is_layout_a = any(p in first_line for p in desc_patterns)
+            is_layout_b = False
+            if not is_layout_a:
+                for cell in cells[:-1]:
+                    if _match_label(_cell_text(cell), desc_patterns):
+                        is_layout_b = True
+                        break
+
+            if not (is_layout_a or is_layout_b):
+                continue
+
+            lines = []
+            strip_label = is_layout_a  # first paragraph of layout A has "Description of content:" prefix
+            for para in content_cell.paragraphs:
+                text = para.text
+                if strip_label:
+                    ci = text.find(':')
+                    text = text[ci + 1:].strip() if ci != -1 else text
+                    strip_label = False
+                else:
+                    text = text.strip()
+                if not text:
+                    continue
+                non_empty_runs = [r for r in para.runs if r.text.strip()]
+                is_bold = bool(non_empty_runs) and all(r.bold is True for r in non_empty_runs)
+                lines.append(('[B]' if is_bold else '') + text)
+
+            return '\n'.join(lines)
+
+    return ''
+
+
 def _extract_all_fields(doc) -> dict:
     """
     Single table-scan extraction for all labeled fields.
@@ -411,7 +461,7 @@ def parse_notification(docx_path: str) -> dict:
     result['agency']               = extracted['agency']
     result['products']             = extracted['products']
     result['title']                = extracted['title']
-    result['description']          = extracted['description']
+    result['description']          = _extract_description_with_bold(doc) or extracted['description']
     result['objective_text']       = extracted['objective']
     result['other_docs']           = extracted['other_docs']
     result['comment_deadline_raw'] = extracted['comment_deadline']
