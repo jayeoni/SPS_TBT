@@ -94,23 +94,6 @@ NOTIFYING COUNTRY: {notifying_country}{local_gov_line}
 AGENCY RESPONSIBLE: {parsed.get('agency', '')}
 SOURCE LANGUAGE: {parsed.get('source_language', 'en')}{addendum_info}
 
---- EXTRACTED FIELDS ---
-Title: {title_clean}
-Products covered: {parsed.get('products', '')}
-Regions/countries affected: {parsed.get('regions', '')}
-Objectives (checked): {objectives_str}
-Objective/rationale text: {parsed.get('objective_text', '')}
-Description: {parsed.get('description', '')}
-Other relevant documents: {other_docs_clean}
-Comment deadline (raw): {parsed.get('comment_deadline_raw', '')}
-Entry into force (raw): {parsed.get('entry_force_raw', '')}
-
---- DOMESTIC EXPORT DATA ---
-{export_section}
-
---- TERMINOLOGY DICTIONARY (use these translations) ---
-{term_lines}
-
 --- CLASSIFICATION RULES ---
 
 [중요도]
@@ -179,7 +162,27 @@ HPAI 발생에 따른 프랑스 루아르아틀랑티크(Loire-Atlantique)산 �
 신선 식용 블루베리(Vaccinium spp.) 수입 가능국가 추가-칠레, 멕시코, 모로코, 페루, 미국
 개·고양이·수생생물 외 사료첨가제 재허가
 
+--- TERMINOLOGY DICTIONARY (use these translations) ---
+{term_lines}
+
+--- EXTRACTED FIELDS ---
+Title: {title_clean}
+Products covered: {parsed.get('products', '')}
+Regions/countries affected: {parsed.get('regions', '')}
+Objectives (checked): {objectives_str}
+Objective/rationale text: {parsed.get('objective_text', '')}
+Description: {parsed.get('description', '')}
+Other relevant documents: {other_docs_clean}
+Comment deadline (raw): {parsed.get('comment_deadline_raw', '')}
+Entry into force (raw): {parsed.get('entry_force_raw', '')}
+
+--- DOMESTIC EXPORT DATA ---
+{export_section}
+
 --- OUTPUT FORMAT ---
+IMPORTANT: "내용" must be a complete Korean 개조식 translation of the "Description" field above.
+Translate the actual Description text word-for-word — NOT the title, NOT any example from this prompt.
+
 Return ONLY this JSON object (no other text):
 {{
   "지방정부_kr": "Korean name of the local/regional government from field 1 (e.g. '캘리포니아 주', '안달루시아 자치주'); empty string if field 1 has no local government text",
