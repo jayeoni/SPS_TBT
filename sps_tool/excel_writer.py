@@ -154,6 +154,47 @@ def find_row(wb, doc_number: str, target_month: str = None):
     return None, None, None, col_map
 
 
+def _find_row_readonly(excel_path: str, doc_number: str, target_month: str = None):
+    """
+    Open the workbook in read-only mode to locate the target row.
+    Returns (sheet_name, row_idx, base_date, col_map) or (None, None, None, COL).
+
+    Using read_only=True streams cells without building writable Cell objects for
+    every row, so the subsequent write-mode open won't materialise non-target rows
+    and openpyxl's save() won't touch their styles.
+    """
+    wb = load_workbook(excel_path, read_only=True, data_only=True)
+    try:
+        ws = _get_month_sheet(wb, target_month)
+        if ws is None:
+            return None, None, None, dict(COL)
+
+        sheet_name = ws.title
+        col_map = _detect_col_map(ws)
+        needle = _normalize_doc_number(doc_number)
+        needle_base = re.sub(r'/ADD\.\d+$', '', needle)
+        doc_col = col_map['문서번호']
+        date_col = col_map['배포일']
+
+        for row in ws.iter_rows(min_row=2):
+            cell = row[doc_col - 1]
+            if cell.value is None:
+                continue
+            cell_val = _normalize_doc_number(str(cell.value))
+            cell_ids = [_normalize_doc_number(x) for x in re.split(r'[,;]', cell_val)]
+            if needle in cell_ids or needle == cell_val or (needle_base != needle and needle_base in cell_ids):
+                base_date = None
+                date_cell = row[date_col - 1]
+                if date_cell.value:
+                    from date_engine import parse_excel_date
+                    base_date = parse_excel_date(date_cell.value)
+                return sheet_name, cell.row, base_date, col_map
+    finally:
+        wb.close()
+
+    return None, None, None, dict(COL)
+
+
 def write_fields(
     ws,
     row_idx: int,
@@ -228,10 +269,19 @@ def load_and_process(excel_path: str, doc_number: str, fields: dict,
         # Rolling backup — overwritten each run so it does not accumulate
         shutil.copy2(excel_path, excel_path + '.sps_bak')
 
-        wb = load_workbook(excel_path)
-        ws, row_idx, base_date, col_map = find_row(wb, doc_number, target_month)
-        if ws is None or row_idx is None:
+        # Phase 1 — read-only search: find the target row without building writable
+        # Cell objects for the entire sheet.  This prevents openpyxl from touching
+        # non-target rows' styles when it writes the file in Phase 2.
+        sheet_name, row_idx, base_date, col_map = _find_row_readonly(
+            excel_path, doc_number, target_month
+        )
+        if sheet_name is None or row_idx is None:
             return False, f'문서번호 {doc_number}을(를) Excel에서 찾을 수 없습니다.', None
+
+        # Phase 2 — write mode: access ONLY the target row.
+        # Do NOT call iter_rows or ws[1] here; col_map is already known from Phase 1.
+        wb = load_workbook(excel_path)
+        ws = wb[sheet_name]
 
         # Record row count before writing — must not change
         row_count_before = ws.max_row
@@ -253,8 +303,7 @@ def load_and_process(excel_path: str, doc_number: str, fields: dict,
 def get_base_date(excel_path: str, doc_number: str, target_month: str = None):
     """Get only the 배포일 for a given document number (for date calculations)."""
     try:
-        wb = load_workbook(excel_path, read_only=True, data_only=True)
-        _, _, base_date, _ = find_row(wb, doc_number, target_month)
+        _, _, base_date, _ = _find_row_readonly(excel_path, doc_number, target_month)
         return base_date
     except Exception:
         return None

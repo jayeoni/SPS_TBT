@@ -344,19 +344,19 @@ def _row_title(cell_text, t):
     return [line] + urls
 
 
+# Markers the LLM may emit from prompt instructions — strip them from output
+_LLM_MARKER_RE = re.compile(r'\[/?[Bb]\]|\[getB\]|\[/?[Ii]\]|\[/?[Uu]\]|-ㅁ\b')
+
+
 def _row_description(cell_text, t):
     desc_kr = t.get('내용', '')
     if not desc_kr:
         return []
     lines = []
     for s in desc_kr.split('\n'):
-        s = s.strip()
-        if not s:
-            continue
-        # Strip any [B] markers — bold is applied from original paragraphs, not LLM markers
-        if s.startswith('[B]'):
-            s = s[3:]
-        lines.append(s)
+        s = _LLM_MARKER_RE.sub('', s).strip()
+        if s:
+            lines.append(s)
     if not lines:
         return []
     return [f'내용 설명: {lines[0]}'] + lines[1:]
@@ -438,6 +438,16 @@ def _row_other_docs(cell_text, t):
     doc_kr = t.get('기타문서', '')
     if doc_kr:
         lines += [s.strip() for s in doc_kr.split('\n') if s.strip()]
+    else:
+        # Fallback: extract raw content after the label colon from the original cell text
+        m = re.search(
+            r'(?:other relevant documents|otros documentos)[^:]*:\s*(.+)',
+            cell_text, re.IGNORECASE | re.DOTALL,
+        )
+        if m:
+            raw = re.sub(r'https?://\S+', '', m.group(1)).strip()
+            if raw:
+                lines.append(raw)
     return lines
 
 
@@ -886,34 +896,41 @@ def create_bilingual_docx(
                             _add_paragraph(content_cell, korean_lines[0], font_size, para_style,
                                            bold=bold, italic=italic, underline=underline)
             elif row_type == 'description':
-                # Build a bold-per-paragraph map directly from the original cell.
-                # Smaller LLMs don't reliably preserve [B] markers, so we map by
-                # paragraph index instead of relying on LLM output.
-                orig_bold = []
+                # Build per-paragraph (bold, italic, underline) map directly from the
+                # original cell — LLMs don't reliably emit formatting markers.
+                orig_formats = []
                 for para in content_cell.paragraphs:
                     if not para.text.strip():
                         continue
                     non_empty_runs = [r for r in para.runs if r.text.strip()]
                     if not non_empty_runs:
-                        orig_bold.append(False)
+                        orig_formats.append((False, False, False))
                         continue
-                    run_bold = all(r.bold is True for r in non_empty_runs)
-                    if not run_bold:
-                        # Also check paragraph-level rPr bold (w:pPr/w:rPr/w:b)
+                    p_bold      = all(r.bold      is True for r in non_empty_runs)
+                    p_italic    = all(r.italic    is True for r in non_empty_runs)
+                    p_underline = all(r.underline is True for r in non_empty_runs)
+                    # Also check paragraph-level rPr (w:pPr/w:rPr) for inherited formatting
+                    if not (p_bold or p_italic or p_underline):
                         pPr = para._p.find(qn('w:pPr'))
                         if pPr is not None:
                             rPr_el = pPr.find(qn('w:rPr'))
                             if rPr_el is not None:
                                 b_el = rPr_el.find(qn('w:b'))
+                                i_el = rPr_el.find(qn('w:i'))
+                                u_el = rPr_el.find(qn('w:u'))
                                 if b_el is not None:
-                                    val = b_el.get(qn('w:val'), '')
-                                    run_bold = val not in ('false', '0', 'off')
-                    orig_bold.append(run_bold)
+                                    p_bold      = b_el.get(qn('w:val'), '') not in ('false', '0', 'off')
+                                if i_el is not None:
+                                    p_italic    = i_el.get(qn('w:val'), '') not in ('false', '0', 'off')
+                                if u_el is not None:
+                                    p_underline = u_el.get(qn('w:val'), '') not in ('none', '', 'false', '0', 'off')
+                    orig_formats.append((p_bold, p_italic, p_underline))
                 for i, line in enumerate(korean_lines):
-                    line_bold = orig_bold[i] if i < len(orig_bold) else None
+                    b, it, u = orig_formats[i] if i < len(orig_formats) else (False, False, False)
                     _add_paragraph(content_cell, line, font_size, para_style,
-                                   bold=True if line_bold else None,
-                                   italic=italic, underline=underline)
+                                   bold=True if b else None,
+                                   italic=True if it else None,
+                                   underline=True if u else None)
             else:
                 for line in korean_lines:
                     _add_paragraph(content_cell, line, font_size, para_style,

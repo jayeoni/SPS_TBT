@@ -180,11 +180,11 @@ _BULK_EXTRACT_FIELDS = [
 ]
 
 
-def _extract_description_with_bold(doc) -> str:
+def _extract_description_paragraphs(doc) -> str:
     """
-    Extract the description field paragraph by paragraph, prefixing each
-    paragraph whose runs are ALL bold with '[B]'.  Returns joined lines.
-    Falls back to '' so the caller can use the plain-text extraction.
+    Extract the description field paragraph by paragraph, stripping the label
+    from the first paragraph (Layout A).  Returns paragraphs joined by \\n.
+    Falls back to '' so the caller can use plain-text extraction.
     """
     desc_patterns = LABEL_PATTERNS['description']
     for table in doc.tables:
@@ -210,7 +210,7 @@ def _extract_description_with_bold(doc) -> str:
                 continue
 
             lines = []
-            strip_label = is_layout_a  # first paragraph of layout A has "Description of content:" prefix
+            strip_label = is_layout_a  # first paragraph of Layout A has "Description of content:" prefix
             for para in content_cell.paragraphs:
                 text = para.text
                 if strip_label:
@@ -219,11 +219,8 @@ def _extract_description_with_bold(doc) -> str:
                     strip_label = False
                 else:
                     text = text.strip()
-                if not text:
-                    continue
-                non_empty_runs = [r for r in para.runs if r.text.strip()]
-                is_bold = bool(non_empty_runs) and all(r.bold is True for r in non_empty_runs)
-                lines.append(('[B]' if is_bold else '') + text)
+                if text:
+                    lines.append(text)
 
             return '\n'.join(lines)
 
@@ -467,7 +464,7 @@ def parse_notification(docx_path: str) -> dict:
     result['agency']               = extracted['agency']
     result['products']             = extracted['products']
     result['title']                = extracted['title']
-    result['description']          = _extract_description_with_bold(doc) or extracted['description']
+    result['description']          = _extract_description_paragraphs(doc) or extracted['description']
     result['objective_text']       = extracted['objective']
     result['other_docs']           = extracted['other_docs']
     result['comment_deadline_raw'] = extracted['comment_deadline']
