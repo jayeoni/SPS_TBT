@@ -12,28 +12,53 @@ MODEL_ANTHROPIC = 'claude-sonnet-4-6'
 MODEL_OLLAMA_DEFAULT = 'qwen2.5:7b'
 OLLAMA_BASE_URL = 'http://localhost:11434'
 
-SYSTEM_PROMPT = """You are an expert assistant for the Korean Ministry of Agriculture, Food and Rural Affairs (농림축산식품부, MAFRA) processing WTO SPS (Sanitary and Phytosanitary) notifications.
+# ── Pre-compiled regexes (module-level to avoid recompilation per file) ────────
+_RE_LANG_PAGE = re.compile(
+    r'^\s*(?:language|n[uú]mero de p[aá]ginas|number of pages)',
+    re.IGNORECASE,
+)
+_RE_LOCAL_GOV = re.compile(
+    r'(?:if applicable.*?involved|local government)[^\n]*:\s*([^\n]+)',
+    re.IGNORECASE,
+)
+_RE_MD_FENCE  = re.compile(r'^```(?:json)?\s*', re.MULTILINE)
+_RE_MD_CLOSE  = re.compile(r'\s*```\s*$', re.MULTILINE)
+_RE_JSON_OBJ  = re.compile(r'\{.*\}', re.DOTALL)
 
-Your tasks:
-1. Translate notification content from English/Spanish/Portuguese into formal Korean government language (공문체)
-2. Classify notifications per MAFRA internal manual rules
-3. Recommend handling based on domestic relevance
+# Behavioral rules only — content-specific rules belong in the user prompt
+# where they are near the actual data.
+SYSTEM_PROMPT = """You are an expert Korean government document analyst processing WTO SPS notifications for MAFRA (농림축산식품부).
 
-Rules for Korean government style:
-- 내용: FAITHFUL word-for-word translation of the ENTIRE original description. Translate every sentence, clause, condition, requirement, and specification exactly as written — do NOT omit, merge, compress, paraphrase, or stop early. Every single clause must appear in Korean, including all regulation names, document numbers, species names, and dates. 개조식 style: sentences end in 됨/함/임/어야 함 (명사형 종결). Sentences already ending in 됨/함/임/어야 함 are complete — do NOT append any extra character. NEVER use ~습니다/~합니다/~입니다. Preserve numbered lists and paragraph breaks with \n.
-- 원산지 표현: translate 'originating in and coming from [Country]', 'coming from [Country]', 'procedente de [Country]', 'en provenance de [Country]', and similar origin phrases as '[Country_Korean]산' (예: 'originating in and coming from Chile' → '칠레산', 'procedente de Argentina' → '아르헨티나산').
-- 주간보고: write as a single concise action phrase, like "브라질산 아보카도 식물체의 수입검역요건 개정"
-- Include scientific names in 국문명(학명) format (e.g., 신선 딸기(Fragaria ananassa))
-- Use standard institutional Korean terms, not casual translations
-- 목적 field: use only the approved standard phrases, semicolons between multiples
+Output ONLY valid JSON — no markdown fences, no explanation, no text outside the JSON object."""
 
-Always output valid JSON only. No explanation text before or after the JSON."""
+
+def _select_terms(terminology: dict, doc_text: str, max_terms: int = 60) -> list:
+    """
+    Return up to max_terms (key, value) pairs, prioritising terms that appear
+    in doc_text so that the most relevant translations are always included.
+    """
+    doc_lower = doc_text.lower()
+    relevant, seen = [], set()
+    for k, v in terminology.items():
+        if k.lower() in doc_lower:
+            relevant.append((k, v))
+            seen.add(k)
+    # Fill remaining slots from the full list (preserves insertion-order priority)
+    filler = [(k, v) for k, v in terminology.items() if k not in seen]
+    return (relevant + filler)[:max_terms]
 
 
 def _build_user_prompt(parsed: dict, export_items: str, terminology: dict) -> str:
-    items = list(terminology.items())
-    selected = items[:60] + items[-20:]  # core terms + recently-added agency/product terms
-    term_lines = '\n'.join(f'  {k} → {v}' for k, v in selected)
+    # Combine document text for term-relevance scoring
+    doc_text = ' '.join(filter(None, [
+        parsed.get('title', ''),
+        parsed.get('products', ''),
+        parsed.get('description', ''),
+        parsed.get('other_docs', ''),
+        parsed.get('objective_text', ''),
+    ]))
+    selected_terms = _select_terms(terminology, doc_text)
+    term_lines = '\n'.join(f'  {k} → {v}' for k, v in selected_terms)
 
     objectives_str = '; '.join(parsed.get('objectives_korean', [])) or '(확인 필요)'
 
@@ -58,32 +83,24 @@ ADDENDUM INFO:
 
     # Extract only the country name from notifying_member (first non-empty line).
     # The raw field often includes boilerplate like "If applicable, name of local government involved:"
-    # which, when left in the prompt, can confuse small LLMs into swapping 통보국_kr and 해당국가.
+    # which can confuse small LLMs into swapping 통보국_kr and 해당국가.
     notifying_raw = parsed.get('notifying_member', '')
     notifying_country = next(
         (ln.strip() for ln in notifying_raw.split('\n') if ln.strip()),
         '',
     )
-    local_gov_m = re.search(
-        r'(?:if applicable.*?involved|local government)[^\n]*:\s*([^\n]+)',
-        notifying_raw, re.IGNORECASE,
-    )
+    local_gov_m = _RE_LOCAL_GOV.search(notifying_raw)
     local_gov = local_gov_m.group(1).strip() if local_gov_m else ''
     local_gov_line = f'\nLOCAL GOVERNMENT (field 1, if any): {local_gov}' if local_gov else ''
 
-    # Strip "Language(s):" and "Number of pages:" lines that appear in the same
-    # cell as the title on the WTO form.  These are metadata, not part of the
-    # actual title text; leaving them in confuses small LLMs and causes wrong
-    # resolution numbers and product names in the translated 제목 output.
+    # Strip "Language(s):" and "Number of pages:" metadata lines from the title cell.
     title_raw = parsed.get('title', '')
     title_clean = '\n'.join(
         ln for ln in title_raw.split('\n')
-        if not re.search(r'^\s*(?:language|n[uú]mero de p[aá]ginas|number of pages)', ln, re.IGNORECASE)
+        if not _RE_LANG_PAGE.match(ln)
     ).strip()
 
-    # WTO documents use non-breaking spaces (U+00A0) between "Law", "No.", and
-    # the number — e.g. "Law\xa0No.\xa01020".  Replace with plain spaces so the
-    # LLM can recognise the "Law No. X" pattern and apply the correct format rule.
+    # WTO documents use non-breaking spaces (U+00A0) in "Law\xa0No.\xa01020" — normalise.
     other_docs_clean = parsed.get('other_docs', '').replace('\xa0', ' ')
 
     return f"""Process this WTO SPS notification:
@@ -125,6 +142,13 @@ GMO/LMO: 사료, 식물체, 종자, 식품
 농산물: 품질, 중금속, 곰팡이독소
 축산물: 위생·안전, 품질
 수산물: 위생품질
+
+--- 원산지 표현 RULE ---
+Translate origin phrases as '[Country_Korean]산':
+  'originating in and coming from Chile' → '칠레산'
+  'coming from Argentina' → '아르헨티나산'
+  'procedente de Nicaragua' → '니카라과산'
+  'en provenance de France' → '프랑스산'
 
 --- 제목 TRANSLATION RULES ---
 CRITICAL: Translate ONLY the actual document title text. Do NOT include language or page-count metadata in 제목.
@@ -185,13 +209,13 @@ Translate the actual Description text word-for-word — NOT the title, NOT any e
 
 Return ONLY this JSON object (no other text):
 {{
-  "지방정부_kr": "Korean name of the local/regional government from field 1 (e.g. '캘리포니아 주', '안달루시아 자치주'); empty string if field 1 has no local government text",
+  "지방정부_kr": "Korean name of local/regional government from field 1 (e.g. '캘리포니아 주'); empty string if none",
   "제목": "Full verbatim Korean translation of the title; include scientific name as 국문명(학명) if present",
-  "내용": "FAITHFUL word-for-word translation of EVERY sentence into Korean 개조식. CRITICAL: translate the COMPLETE text — every clause, condition, requirement, species name, document number, and date must appear in Korean. Do NOT omit, merge, compress, or paraphrase any part. 개조식: sentences end in 됨/함/임/어야 함 (명사형 종결) — sentences already ending correctly need no extra suffix. Never ~습니다/~합니다. Keep numbered lists. Use \\n between items.",
-  "해당품목": "Korean product name; keep scientific name in parentheses e.g., 아보카도(Persea americana)",
-  "기타문서": "Korean translation of document references in 'Other relevant documents'. Format: 법령 제[number]호 \"[Korean title]\", ([language] 이용 가능) — follow the 기타문서 TRANSLATION RULES above exactly. Output ONLY the reference line(s), no commentary or extra sentences. Omit HTTP/HTTPS URLs. Output empty string ONLY if the field is genuinely empty.",
-  "목적": "Output ONLY the objectives that are explicitly checked in 'Objectives (checked)' input. Do NOT infer from the description or notification content. Use only these exact phrases, semicolons between multiples: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호. If no objectives are confirmed checked, output empty string.",
-  "목적_근거": "Korean 개조식 translation of ONLY the free-text rationale from the 'Objective/rationale text' input field (endings: 됨/함/임/어야 함; sentences already ending correctly need no extra suffix). Output empty string if that field is empty or contains only checkboxes. Do NOT include any content from the Description field.",
+  "내용": "Complete 개조식 Korean translation of EVERY clause, requirement, species name, date, and document number in Description. Endings: 됨/함/임/어야 함. Never ~습니다/~합니다. Use \\n between items.",
+  "해당품목": "Korean product name; keep scientific name in parentheses e.g. 아보카도(Persea americana)",
+  "기타문서": "Follow 기타문서 TRANSLATION RULES above. Reference lines only — no URLs, no commentary. Empty string if genuinely empty.",
+  "목적": "ONLY objectives explicitly checked in 'Objectives (checked)'. Exact phrases, semicolons between: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호. Empty string if none checked.",
+  "목적_근거": "개조식 Korean translation of ONLY the free-text from 'Objective/rationale text'. Empty if that field is empty or has only checkboxes.",
   "해당국가": "Korean country name or '모든 교역국'",
   "통보국_kr": "Korean name of the notifying member country",
   "담당기관_kr": "Korean name of the agency; keep acronym in parentheses e.g. 동식물위생관리규제청(AGROCALIDAD)",
@@ -203,7 +227,7 @@ Return ONLY this JSON object (no other text):
   "관련부서": "Department 1\\nDepartment 2\\n(one per line)",
   "통보내용": "one value from the 통보내용 list above",
   "통보_세부": "one sub-type from the list above, or empty string",
-  "품목": "Short Korean product label (e.g., 옥수수(Zea mays) 종자 or 가금 및 가금제품)",
+  "품목": "Short Korean product label (e.g. 옥수수(Zea mays) 종자 or 가금 및 가금제품)",
   "flags": ["list of field names that are uncertain or need review"],
   "source_language": "en or es or pt"
 }}"""
@@ -211,15 +235,14 @@ Return ONLY this JSON object (no other text):
 
 def _parse_llm_response(raw: str) -> dict:
     """Extract and parse JSON from LLM response, handling markdown fences."""
-    # Strip markdown code fences that some models add
-    raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
-    raw = re.sub(r'\s*```\s*$', '', raw, flags=re.MULTILINE)
+    raw = _RE_MD_FENCE.sub('', raw)
+    raw = _RE_MD_CLOSE.sub('', raw)
     raw = raw.strip()
 
     if raw.startswith('{'):
         json_str = raw
     else:
-        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        m = _RE_JSON_OBJ.search(raw)
         if not m:
             raise ValueError(f'LLM 응답에서 JSON을 찾을 수 없습니다: {raw[:300]}')
         json_str = m.group()
@@ -253,7 +276,11 @@ def _process_with_ollama(parsed: dict, export_items: str, terminology: dict, mod
             {'role': 'user', 'content': user_prompt},
         ],
         'stream': False,
-        'options': {'temperature': 0.1, 'num_predict': 4096},
+        'options': {
+            'temperature': 0.1,
+            'num_predict': 4096,
+            'num_ctx': 16384,   # prevent silent truncation on long documents
+        },
     }).encode('utf-8')
 
     for attempt in range(2):  # retry once on timeout (model cold-start)
@@ -270,7 +297,7 @@ def _process_with_ollama(parsed: dict, export_items: str, terminology: dict, mod
             return _parse_llm_response(raw)
         except TimeoutError:
             if attempt == 0:
-                continue  # model may still be loading; retry once
+                continue
             raise ValueError(
                 'Ollama 응답 시간 초과 (2회 시도).\n'
                 'Ollama가 실행 중인지, 모델이 정상적으로 로드되었는지 확인하세요.'
