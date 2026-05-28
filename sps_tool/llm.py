@@ -81,6 +81,11 @@ ADDENDUM INFO:
         if not re.search(r'^\s*(?:language|n[uú]mero de p[aá]ginas|number of pages)', ln, re.IGNORECASE)
     ).strip()
 
+    # WTO documents use non-breaking spaces (U+00A0) between "Law", "No.", and
+    # the number — e.g. "Law\xa0No.\xa01020".  Replace with plain spaces so the
+    # LLM can recognise the "Law No. X" pattern and apply the correct format rule.
+    other_docs_clean = parsed.get('other_docs', '').replace('\xa0', ' ')
+
     return f"""Process this WTO SPS notification:
 
 DOCUMENT: {parsed.get('doc_number', '')}
@@ -96,7 +101,7 @@ Regions/countries affected: {parsed.get('regions', '')}
 Objectives (checked): {objectives_str}
 Objective/rationale text: {parsed.get('objective_text', '')}
 Description: {parsed.get('description', '')}
-Other relevant documents: {parsed.get('other_docs', '')}
+Other relevant documents: {other_docs_clean}
 Comment deadline (raw): {parsed.get('comment_deadline_raw', '')}
 Entry into force (raw): {parsed.get('entry_force_raw', '')}
 
@@ -151,6 +156,15 @@ Resolution No. 1##-2026-IPSA establishing phytosanitary requirements for the imp
 Resolución No. 045-2025 que establece los requisitos sanitarios para la importación de carne de res (Bos taurus) procedente de Argentina → 아르헨티나산 쇠고기(Bos taurus) 수입에 대한 위생요건을 규정하는 결의안 제045-2025호
 Resolución No. 012-2024-MAG estableciendo requisitos fitosanitarios para importación de manzanas frescas (Malus domestica) originarias de Chile → 칠레산 신선 사과(Malus domestica) 수입에 대한 식물검역요건을 규정하는 결의안 제012-2024-MAG호
 
+--- 기타문서 TRANSLATION RULES ---
+"Law No. X" or "Ley No. X" → ALWAYS write as "법령 제X호" (NEVER keep "No." or "Ley" in Korean).
+Format: 법령 제[number]호 "[Korean law title]", ([language] 이용 가능)
+Output ONLY the document reference line(s) — NO commentary, NO explanatory sentences, NO preamble.
+One line per document; multiple documents separated by \\n.
+
+--- 기타문서 EXAMPLE ---
+Law No. 1020, "Ley de Protección Fitosanitaria de Nicaragua" (available in Spanish) → 법령 제1020호 "니카라과 식물검역 및 보호법", (스페인어로 이용 가능)
+
 --- 주간보고 EXAMPLES (match these styles) ---
 벨기에산 번식용 옥수수(Zea mays) 종자의 수입검역요건 발효
 아르헨티나산 벳지(Vicia villosa) 종자의 수입검역요건(안) 제정
@@ -172,7 +186,7 @@ Return ONLY this JSON object (no other text):
   "제목": "Full verbatim Korean translation of the title; include scientific name as 국문명(학명) if present",
   "내용": "FAITHFUL word-for-word translation of EVERY sentence into Korean 개조식. CRITICAL: translate the COMPLETE text — every clause, condition, requirement, species name, document number, and date must appear in Korean. Do NOT omit, merge, compress, or paraphrase any part. 개조식: sentences end in 됨/함/임/어야 함 (명사형 종결) — sentences already ending correctly need no extra suffix. Never ~습니다/~합니다. Keep numbered lists. Use \\n between items.",
   "해당품목": "Korean product name; keep scientific name in parentheses e.g., 아보카도(Persea americana)",
-  "기타문서": "Korean translation of ALL content in 'Other relevant documents'. Translate every law name, document title, and reference into Korean. Omit only HTTP/HTTPS URLs. Translate availability notes: 'available in Spanish' → '스페인어로 이용 가능'. Output empty string ONLY if the field is genuinely empty.",
+  "기타문서": "Korean translation of document references in 'Other relevant documents'. Format: 법령 제[number]호 \"[Korean title]\", ([language] 이용 가능) — follow the 기타문서 TRANSLATION RULES above exactly. Output ONLY the reference line(s), no commentary or extra sentences. Omit HTTP/HTTPS URLs. Output empty string ONLY if the field is genuinely empty.",
   "목적": "Output ONLY the objectives that are explicitly checked in 'Objectives (checked)' input. Do NOT infer from the description or notification content. Use only these exact phrases, semicolons between multiples: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호. If no objectives are confirmed checked, output empty string.",
   "목적_근거": "Korean 개조식 translation of ONLY the free-text rationale from the 'Objective/rationale text' input field (endings: 됨/함/임/어야 함; sentences already ending correctly need no extra suffix). Output empty string if that field is empty or contains only checkboxes. Do NOT include any content from the Description field.",
   "해당국가": "Korean country name or '모든 교역국'",

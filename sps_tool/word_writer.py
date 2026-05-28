@@ -437,17 +437,35 @@ def _row_other_docs(cell_text, t):
     lines = ['활용 가능한 다른 관련문서 및 언어:']
     doc_kr = t.get('기타문서', '')
     if doc_kr:
-        lines += [s.strip() for s in doc_kr.split('\n') if s.strip()]
+        # Accept only lines that look like document references — strip any LLM
+        # commentary sentences (lines with no number, no quoted title, no "이용 가능").
+        for s in doc_kr.split('\n'):
+            s = s.strip()
+            if not s:
+                continue
+            is_ref = (
+                re.search(r'제\s*\d', s) or       # 제N호 / 제Nxx호
+                re.search(r'\d+호', s) or          # Nxx호
+                re.search(r'이용 가능', s) or       # availability note
+                re.search(r'No\.\s*\d', s) or      # untranslated No. (pass through)
+                re.search(r'"[^"]{3,}"', s)         # quoted title
+            )
+            if is_ref:
+                lines.append(s)
     else:
-        # Fallback: extract raw content after the label colon from the original cell text
+        # Fallback: extract raw content after the label colon from the original cell text.
+        # Normalize non-breaking spaces first so the regex matches correctly.
+        cell_norm = cell_text.replace('\xa0', ' ')
         m = re.search(
             r'(?:other relevant documents|otros documentos)[^:]*:\s*(.+)',
-            cell_text, re.IGNORECASE | re.DOTALL,
+            cell_norm, re.IGNORECASE | re.DOTALL,
         )
         if m:
             raw = re.sub(r'https?://\S+', '', m.group(1)).strip()
-            if raw:
-                lines.append(raw)
+            # Limit to the first non-empty paragraph (avoids pulling in subsequent form rows)
+            first_para = raw.split('\n\n')[0].strip()
+            if first_para:
+                lines.append(first_para)
     return lines
 
 
