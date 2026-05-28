@@ -166,6 +166,13 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         result['category']   = llm_result.get('구분', '')
         result['notifying_country'] = parsed.get('notifying_member', '')
 
+        # Override 통보국_kr with a deterministic lookup — the same COUNTRY_KR table
+        # used for 해당국가.  Small LLMs (qwen2.5:7b) can swap notifying country and
+        # affected regions even with a clean prompt; this removes the LLM from that path.
+        _notifying_kr = dept_lookup.translate_regions(parsed.get('notifying_member', ''))
+        if _notifying_kr:
+            llm_result['통보국_kr'] = _notifying_kr
+
         # ── 4b. Compute 국내수출품목 ───────────────────────────────────────
         if is_korea_targeted:
             export_items = llm_result.get('해당품목', '') or '-'
