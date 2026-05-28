@@ -212,7 +212,7 @@ Return ONLY this JSON object (no other text):
   "지방정부_kr": "Korean name of local/regional government from field 1 (e.g. '캘리포니아 주'); empty string if none",
   "제목": "Full verbatim Korean translation of the title; include scientific name as 국문명(학명) if present",
   "내용": "Complete 개조식 Korean translation of EVERY clause, requirement, species name, date, and document number in Description. Endings: 됨/함/임/어야 함. Never ~습니다/~합니다. Use \\n between items.",
-  "해당품목": "Korean product name; keep scientific name in parentheses e.g. 아보카도(Persea americana)",
+  "해당품목": "Korean translation of 'Products covered' above. Keep scientific name in parentheses. Translate the ACTUAL product text — do NOT copy product names from 주간보고 examples.",
   "기타문서": "Follow 기타문서 TRANSLATION RULES above. Reference lines only — no URLs, no commentary. Empty string if genuinely empty.",
   "목적": "ONLY objectives explicitly checked in 'Objectives (checked)'. Exact phrases, semicolons between: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호. Empty string if none checked.",
   "목적_근거": "개조식 Korean translation of ONLY the free-text from 'Objective/rationale text'. Empty if that field is empty or has only checkboxes.",

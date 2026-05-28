@@ -183,6 +183,89 @@ def _get_or_add_fill_xf(styles_root, color_hex: str,
 
 # ── ZIP / XML internals ───────────────────────────────────────────────────────
 
+def _styles_insert_fill_xf(styles_bytes: bytes, color_hex: str) -> tuple:
+    """
+    Find or append a solid-fill XF entry in styles.xml using string surgery.
+    Returns (new_bytes, xf_index).
+
+    Preserves ALL existing XML byte-for-byte — only inserts text before closing
+    tags.  This avoids lxml's round-trip serialization artefacts (namespace-prefix
+    changes, attribute reordering) that corrupt Excel's theme-color font references
+    in cells that were never touched by this tool.
+    """
+    text        = styles_bytes.decode('utf-8')
+    rgb_upper   = color_hex.upper()          # e.g. 'CCFF99'
+    rgb_argb    = 'FF' + rgb_upper           # e.g. 'FFCCFF99'
+
+    # ── Find existing fill with this colour ──────────────────────────────────
+    fills_start = text.find('<fills')
+    fills_end   = text.find('</fills>') + len('</fills>')
+
+    fill_idx  = None
+    if fills_start != -1 and fills_end > fills_start:
+        fills_block = text[fills_start:fills_end]
+        fill_starts = [m.start() for m in re.finditer(r'<fill\b', fills_block)]
+        for i, pos in enumerate(fill_starts):
+            close = fills_block.find('</fill>', pos)
+            segment = fills_block[pos: close + len('</fill>')] if close != -1 else fills_block[pos:]
+            if 'solid' in segment and (rgb_upper in segment.upper() or rgb_argb in segment.upper()):
+                fill_idx = i
+                break
+
+    fill_count_m = re.search(r'<fills\b[^>]*\bcount="(\d+)"', text)
+    n_fills = int(fill_count_m.group(1)) if fill_count_m else len(fill_starts) if fills_start != -1 else 0
+
+    if fill_idx is None:
+        fill_idx = n_fills
+        new_fill_xml = (
+            f'<fill><patternFill patternType="solid">'
+            f'<fgColor rgb="{rgb_argb}"/>'
+            f'<bgColor indexed="64"/>'
+            f'</patternFill></fill>'
+        )
+        text = text.replace('</fills>', new_fill_xml + '</fills>', 1)
+        if fill_count_m:
+            text = re.sub(
+                r'(<fills\b[^>]*\bcount=")(\d+)(")',
+                lambda m: m.group(1) + str(n_fills + 1) + m.group(3),
+                text, count=1,
+            )
+
+    # ── Find existing XF that uses this fill ────────────────────────────────
+    xfs_start = text.find('<cellXfs')
+    xfs_end   = text.find('</cellXfs>') + len('</cellXfs>')
+
+    xf_idx = None
+    if xfs_start != -1 and xfs_end > xfs_start:
+        xfs_block   = text[xfs_start:xfs_end]
+        xf_starts   = [m.start() for m in re.finditer(r'<xf\b', xfs_block)]
+        for i, pos in enumerate(xf_starts):
+            sc = xfs_block.find('/>', pos)
+            segment = xfs_block[pos: sc + 2] if sc != -1 else xfs_block[pos: pos + 300]
+            if f'fillId="{fill_idx}"' in segment and 'applyFill="1"' in segment:
+                xf_idx = i
+                break
+
+    xf_count_m = re.search(r'<cellXfs\b[^>]*\bcount="(\d+)"', text)
+    n_xfs = int(xf_count_m.group(1)) if xf_count_m else (len(xf_starts) if xfs_start != -1 else 0)
+
+    if xf_idx is None:
+        xf_idx = n_xfs
+        new_xf_xml = (
+            f'<xf numFmtId="0" fontId="0" fillId="{fill_idx}" '
+            f'borderId="0" xfId="0" applyFill="1"/>'
+        )
+        text = text.replace('</cellXfs>', new_xf_xml + '</cellXfs>', 1)
+        if xf_count_m:
+            text = re.sub(
+                r'(<cellXfs\b[^>]*\bcount=")(\d+)(")',
+                lambda m: m.group(1) + str(n_xfs + 1) + m.group(3),
+                text, count=1,
+            )
+
+    return text.encode('utf-8'), xf_idx
+
+
 def _zip_load(excel_path: str) -> tuple:
     """Read every file from the xlsx ZIP. Returns (raw_dict, infos_dict)."""
     with zipfile.ZipFile(excel_path, 'r') as z:
@@ -400,20 +483,15 @@ def _direct_patch_xlsx(
             writes.append((memo_col, '검토 필요: ' + ', '.join(reportable), None))
 
     if writes:
-        # Resolve fill XF indices (add to styles only if needed; never touch existing entries)
+        # Resolve fill XF indices via byte surgery — never re-serialise styles.xml
+        # through lxml, which changes namespace prefixes and corrupts theme-colour
+        # font references in every cell that uses those XF entries.
         fill_xf: dict = {}
-        styles_dirty = False
         for _, _, fill_hex in writes:
             if fill_hex and fill_hex not in fill_xf:
-                fill_xf[fill_hex] = _get_or_add_fill_xf(
-                    styles_root, fill_hex, xfs_list, fills_list
-                )
-                styles_dirty = True
-
-        if styles_dirty:
-            raw['xl/styles.xml'] = _ET.tostring(
-                styles_root, xml_declaration=True, encoding='UTF-8', standalone=True
-            )
+                new_styles, xf_idx = _styles_insert_fill_xf(raw['xl/styles.xml'], fill_hex)
+                fill_xf[fill_hex] = xf_idx
+                raw['xl/styles.xml'] = new_styles  # accumulate changes across colours
 
         # Apply writes
         for col_idx, value, fill_hex in writes:
