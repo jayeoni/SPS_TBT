@@ -71,6 +71,16 @@ ADDENDUM INFO:
     local_gov = local_gov_m.group(1).strip() if local_gov_m else ''
     local_gov_line = f'\nLOCAL GOVERNMENT (field 1, if any): {local_gov}' if local_gov else ''
 
+    # Strip "Language(s):" and "Number of pages:" lines that appear in the same
+    # cell as the title on the WTO form.  These are metadata, not part of the
+    # actual title text; leaving them in confuses small LLMs and causes wrong
+    # resolution numbers and product names in the translated 제목 output.
+    title_raw = parsed.get('title', '')
+    title_clean = '\n'.join(
+        ln for ln in title_raw.split('\n')
+        if not re.search(r'^\s*(?:language|n[uú]mero de p[aá]ginas|number of pages)', ln, re.IGNORECASE)
+    ).strip()
+
     return f"""Process this WTO SPS notification:
 
 DOCUMENT: {parsed.get('doc_number', '')}
@@ -80,7 +90,7 @@ AGENCY RESPONSIBLE: {parsed.get('agency', '')}
 SOURCE LANGUAGE: {parsed.get('source_language', 'en')}{addendum_info}
 
 --- EXTRACTED FIELDS ---
-Title: {parsed.get('title', '')}
+Title: {title_clean}
 Products covered: {parsed.get('products', '')}
 Regions/countries affected: {parsed.get('regions', '')}
 Objectives (checked): {objectives_str}
@@ -128,9 +138,18 @@ GMO/LMO: 사료, 식물체, 종자, 식품
 축산물: 위생·안전, 품질
 수산물: 위생품질
 
---- 제목 TRANSLATION EXAMPLES (match this structure for resolution titles) ---
-Resolution No. 175-2026-IPSA establishing phytosanitary requirements for the importation of fresh pears (Pyrus communis) originating in Peru → 페루산 신선한 배(Pyrus communis) 수입에 대한 식물검역요건을 규정하는 결의안 제175-2026-IPSA호
-Resolution No. 159-2026-IPSA establishing phytosanitary requirements for the importation of unmanufactured tobacco (Nicotiana tabacum) originating in the United States → 미국산 담배(Nicotiana tabacum) 수입에 대한 식물검역요건을 규정하는 결의안 제159-2026-IPSA호
+--- 제목 TRANSLATION RULES ---
+CRITICAL: Translate ONLY the actual document title text. Do NOT include language or page-count metadata in 제목.
+Resolution number format: "Resolution No. X-Y-Z" or "Resolución No. X-Y-Z" → ALWAYS write as "결의안 제X-Y-Z호" (NEVER keep "No." in Korean output).
+Product name: translate fully into Korean; keep scientific name in parentheses if present.
+Structure for "Resolution establishing requirements for [product] originating in [country]":
+  → [country_kr]산 [product_kr] 수입에 대한 [requirements type_kr]을 규정하는 결의안 제[number]호
+
+--- 제목 TRANSLATION EXAMPLES ---
+Resolution No. 1##-2026-IPSA establishing phytosanitary requirements for the importation of fresh pears (Pyrus communis) originating in Peru → 페루산 신선한 배(Pyrus communis) 수입에 대한 식물검역요건을 규정하는 결의안 제175-2026-IPSA호
+Resolution No. 1##-2026-IPSA establishing phytosanitary requirements for the importation of unmanufactured tobacco (Nicotiana tabacum) originating in the United States → 미국산 담배(Nicotiana tabacum) 수입에 대한 식물검역요건을 규정하는 결의안 제159-2026-IPSA호
+Resolución No. 045-2025 que establece los requisitos sanitarios para la importación de carne de res (Bos taurus) procedente de Argentina → 아르헨티나산 쇠고기(Bos taurus) 수입에 대한 위생요건을 규정하는 결의안 제045-2025호
+Resolución No. 012-2024-MAG estableciendo requisitos fitosanitarios para importación de manzanas frescas (Malus domestica) originarias de Chile → 칠레산 신선 사과(Malus domestica) 수입에 대한 식물검역요건을 규정하는 결의안 제012-2024-MAG호
 
 --- 주간보고 EXAMPLES (match these styles) ---
 벨기에산 번식용 옥수수(Zea mays) 종자의 수입검역요건 발효
