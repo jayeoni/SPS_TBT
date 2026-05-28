@@ -56,11 +56,26 @@ ADDENDUM INFO:
         else 'No Korean exports found for this country/product combination (write "-" for 국내수출품목).'
     )
 
+    # Extract only the country name from notifying_member (first non-empty line).
+    # The raw field often includes boilerplate like "If applicable, name of local government involved:"
+    # which, when left in the prompt, can confuse small LLMs into swapping 통보국_kr and 해당국가.
+    notifying_raw = parsed.get('notifying_member', '')
+    notifying_country = next(
+        (ln.strip() for ln in notifying_raw.split('\n') if ln.strip()),
+        '',
+    )
+    local_gov_m = re.search(
+        r'(?:if applicable.*?involved|local government)[^\n]*:\s*([^\n]+)',
+        notifying_raw, re.IGNORECASE,
+    )
+    local_gov = local_gov_m.group(1).strip() if local_gov_m else ''
+    local_gov_line = f'\nLOCAL GOVERNMENT (field 1, if any): {local_gov}' if local_gov else ''
+
     return f"""Process this WTO SPS notification:
 
 DOCUMENT: {parsed.get('doc_number', '')}
 TYPE: {notif_type_str}
-NOTIFYING COUNTRY: {parsed.get('notifying_member', '')}
+NOTIFYING COUNTRY: {notifying_country}{local_gov_line}
 AGENCY RESPONSIBLE: {parsed.get('agency', '')}
 SOURCE LANGUAGE: {parsed.get('source_language', 'en')}{addendum_info}
 

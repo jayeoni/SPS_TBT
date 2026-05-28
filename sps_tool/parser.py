@@ -457,7 +457,13 @@ def parse_notification(docx_path: str) -> dict:
 
     # ── Field extraction (single pass over all tables) ─────────────────────
     extracted = _extract_all_fields(doc)
-    result['notifying_member']     = extracted['notifying_member']
+    # Keep only the first non-empty line of the notifying member cell.
+    # The WTO form cell often continues with "If applicable, name of local government..."
+    # which is a boilerplate label (not a value) and confuses downstream LLM processing.
+    raw_member = extracted['notifying_member']
+    result['notifying_member'] = next(
+        (ln.strip() for ln in raw_member.split('\n') if ln.strip()), ''
+    )
     result['agency']               = extracted['agency']
     result['products']             = extracted['products']
     result['title']                = extracted['title']
