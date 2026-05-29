@@ -347,6 +347,10 @@ def _row_title(cell_text, t):
 # Markers the LLM may emit from prompt instructions — strip them from output
 _LLM_MARKER_RE = re.compile(r'\[/?[Bb]\]|\[getB\]|\[/?[Ii]\]|\[/?[Uu]\]|-ㅁ\b')
 
+# 기타문서 lines that can leak into 내용 when LLM blends Description + Other relevant documents.
+# Pattern: 법령 제Nho + availability phrase — very specific to the other-docs format.
+_KITAMUN_LEAK_RE = re.compile(r'법령\s*제\s*\d+호.*이용 가능', re.DOTALL)
+
 
 def _row_description(cell_text, t):
     desc_kr = t.get('내용', '')
@@ -355,8 +359,12 @@ def _row_description(cell_text, t):
     lines = []
     for s in desc_kr.split('\n'):
         s = _LLM_MARKER_RE.sub('', s).strip()
-        if s:
-            lines.append(s)
+        if not s:
+            continue
+        # Strip any 기타문서 reference that leaked into 내용 (LLM blending adjacent fields)
+        if _KITAMUN_LEAK_RE.search(s):
+            continue
+        lines.append(s)
     if not lines:
         return []
     return [f'내용 설명: {lines[0]}'] + lines[1:]
@@ -451,7 +459,7 @@ def _row_other_docs(cell_text, t):
                 re.search(r'"[^"]{3,}"', s)         # quoted title
             )
             if is_ref:
-                lines.append(s)
+                lines[0] += f' {s}'
     else:
         # Fallback: extract raw content after the label colon from the original cell text.
         # Normalize non-breaking spaces first so the regex matches correctly.

@@ -195,8 +195,9 @@ Products covered: {parsed.get('products', '')}
 Regions/countries affected: {parsed.get('regions', '')}
 Objectives (checked): {objectives_str}
 Objective/rationale text: {parsed.get('objective_text', '')}
-Description: {parsed.get('description', '')}
-Other relevant documents: {other_docs_clean}
+Description (→ translate into "내용"): {parsed.get('description', '')}
+--- END OF DESCRIPTION — do NOT include anything below this line in "내용" ---
+Other relevant documents (→ translate into "기타문서"): {other_docs_clean}
 Comment deadline (raw): {parsed.get('comment_deadline_raw', '')}
 Entry into force (raw): {parsed.get('entry_force_raw', '')}
 
