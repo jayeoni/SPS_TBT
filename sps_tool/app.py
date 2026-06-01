@@ -146,7 +146,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
         is_korea_targeted = '한국' in regions_kr and not is_all_partners
 
         # export_items determined after LLM (needs 해당품목 for Korea-targeted case)
-        export_items, export_uncertain = '-', False
+        export_items, export_uncertain = '', False
 
         # ── 4. LLM processing ──────────────────────────────────────────────
         log.info('[%s] LLM 처리 중 (번역 + 분류)...', result['filename'])
@@ -175,7 +175,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
 
         # ── 4b. Compute 국내수출품목 ───────────────────────────────────────
         if is_korea_targeted:
-            export_items = llm_result.get('해당품목', '') or '-'
+            export_items = llm_result.get('해당품목', '')
         elif is_all_partners:
             ensure_export_loaded(cfg)
             export_items, export_uncertain = _export_lookup.lookup(
@@ -183,7 +183,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
                 llm_result.get('해당품목', ''),
                 is_all_partners=True,
             )
-        # else: third-country restriction → export_items stays '-'
+        # else: third-country restriction → export_items stays ''
 
         # ── 5. Date calculations ───────────────────────────────────────────
         date_fields = {}
@@ -225,7 +225,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
             '해당품목':     llm_result.get('해당품목', ''),
             '목적':         llm_result.get('목적', ''),
             '해당국가':     regions_kr,
-            '국내수출품목': export_items if export_items else '-',
+            '국내수출품목': export_items,
             '관련부서':     (dept_lookup.lookup_dept(
                                 llm_result.get('구분', ''),
                                 llm_result.get('통보내용', ''),

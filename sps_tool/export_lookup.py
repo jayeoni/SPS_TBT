@@ -142,12 +142,12 @@ class ExportLookup:
             is_uncertain: True if the match required broad HS inference
         """
         if self._df is None:
-            return ('-', False)
+            return ('', False)
 
-        # Under other ministry jurisdiction → '-'
+        # Under other ministry jurisdiction → empty
         prod_lower = product_text.lower()
         if any(kw in prod_lower for kw in ['fish', 'seafood', 'tobacco', 'water supply']):
-            return ('-', False)
+            return ('', False)
 
         # Find matching country rows
         country_df = self._df[
@@ -162,7 +162,7 @@ class ExportLookup:
             ]
 
         if country_df.empty:
-            return ('-', False)
+            return ('', False)
 
         # Filter by HS chapter based on product description
         chapters = self._hs_chapters_from_product(product_text)
@@ -177,14 +177,14 @@ class ExportLookup:
             is_uncertain = True
 
         if filtered.empty:
-            return ('-', False)
+            return ('', False)
 
         # Get unique product names, deduplicate
         items = filtered['품목명'].dropna().unique().tolist()
         items = list(dict.fromkeys(items))  # preserve order, deduplicate
 
         if not items:
-            return ('-', False)
+            return ('', False)
 
         # Limit to top 5 most relevant
         items = items[:5]
