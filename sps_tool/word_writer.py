@@ -56,6 +56,7 @@ KNOWN_AGENCIES = [
     (re.compile(r'state phytosanitary service', re.IGNORECASE), '식물위생청(SFE)'),
     (re.compile(r'Institute for Agricultural and Livestock Protection and Health|\bIPSA\b', re.IGNORECASE), '농축산물보호위생청(IPSA)'),
     (re.compile(r'ministry of agriculture and livestock', re.IGNORECASE), '농축산부(MAG)'),
+    (re.compile(r'Servicio Nacional de Sanidad Agraria|National Agrarian Health Service|\bSENASA\b', re.IGNORECASE), '국립농업위생청(SENASA)'),
 ]
 
 OBJECTIVE_OPTIONS = [
