@@ -38,10 +38,12 @@ ROW_PATTERNS = {
     'standards':        ['is there a relevant international standard'],
     'urgent_reason':    ['nature of the urgent problem'],
     'other_docs':       ['other relevant documents'],
-    'adoption_date':    ['proposed date of adoption'],
-    'entry_force':      ['proposed date of entry into force'],
-    'comments':         ['final date for comments'],
-    'texts_available':  ['text(s) available from', 'texts available from'],
+    'adoption_date':    ['proposed date of adoption', 'proposed date of publication',
+                         'fecha propuesta de adopci', 'fecha propuesta de publicaci'],
+    'entry_force':      ['proposed date of entry into force', 'entrada en vigor'],
+    'comments':         ['final date for comments', 'fecha límite', 'fecha limite'],
+    'texts_available':  ['text(s) available from', 'texts available from',
+                         'texto(s) disponible'],
     # Addendum-specific rows
     'addendum_intro':           ['the following communication', 'being circulated at the request'],
     'addendum_country_advises': ['hereby advises', 'hereby notifies'],
@@ -443,39 +445,23 @@ def _row_standards(cell_text, t):
 
 
 def _row_other_docs(cell_text, t):
-    lines = ['활용 가능한 다른 관련문서 및 언어:']
-    doc_kr = t.get('기타문서', '')
+    doc_kr = t.get('기타문서', '').strip()
     if doc_kr:
-        # Accept only lines that look like document references — strip any LLM
-        # commentary sentences (lines with no number, no quoted title, no "이용 가능").
-        for s in doc_kr.split('\n'):
-            s = s.strip()
-            if not s:
-                continue
-            is_ref = (
-                re.search(r'제\s*\d', s) or       # 제N호 / 제Nxx호
-                re.search(r'\d+호', s) or          # Nxx호
-                re.search(r'이용 가능', s) or       # availability note
-                re.search(r'No\.\s*\d', s) or      # untranslated No. (pass through)
-                re.search(r'"[^"]{3,}"', s)         # quoted title
-            )
-            if is_ref:
-                lines[0] += f' {s}'
-    else:
-        # Fallback: extract raw content after the label colon from the original cell text.
-        # Normalize non-breaking spaces first so the regex matches correctly.
-        cell_norm = cell_text.replace('\xa0', ' ')
-        m = re.search(
-            r'(?:other relevant documents|otros documentos)[^:]*:\s*(.+)',
-            cell_norm, re.IGNORECASE | re.DOTALL,
-        )
-        if m:
-            raw = re.sub(r'https?://\S+', '', m.group(1)).strip()
-            # Limit to the first non-empty paragraph (avoids pulling in subsequent form rows)
-            first_para = raw.split('\n\n')[0].strip()
-            if first_para:
-                lines.append(first_para)
-    return lines
+        lines = ['활용 가능한 다른 관련문서 및 언어:']
+        lines += [s.strip() for s in doc_kr.split('\n') if s.strip()]
+        return lines
+    # Fallback: extract raw content after the label colon, strip URLs
+    cell_norm = cell_text.replace('\xa0', ' ')
+    m = re.search(
+        r'(?:other relevant documents|otros documentos)[^:]*:\s*(.+)',
+        cell_norm, re.IGNORECASE | re.DOTALL,
+    )
+    if m:
+        raw = re.sub(r'https?://\S+', '', m.group(1)).strip()
+        first_para = raw.split('\n\n')[0].strip()
+        if first_para:
+            return ['활용 가능한 다른 관련문서 및 언어:', first_para]
+    return ['활용 가능한 다른 관련문서 및 언어:']
 
 
 def _row_adoption_date(cell_text, t):
