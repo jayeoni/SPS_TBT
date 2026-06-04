@@ -446,7 +446,7 @@ def _direct_patch_xlsx(
     # Build cell map for target row
     cell_map = {_col_num(c.get('r', '')): c for c in row_el.findall(f'{{{_SS}}}c')}
 
-    force_write = FORCE_WRITE_FIELDS | ({'해당품목', '목적', '발효일'} if is_non_english else set())
+    force_write = FORCE_WRITE_FIELDS | ({'해당품목', '목적', '발효일'} if is_non_english else {'제목', '내용'})
 
     writes = []  # (col_idx, str_value, fill_hex | None)
     for field_name in WRITABLE_FIELDS:
@@ -459,18 +459,15 @@ def _direct_patch_xlsx(
 
         c_el = cell_map.get(col_idx)
 
-        if c_el is not None and field_name not in force_write:
+        if c_el is not None:
             cur = _cell_xml_value(c_el, ss_strings)
             if cur and cur.strip():
-                # Preserve unless: lime-fill cell with non-Korean content (portal pre-fill)
-                if _has_korean(cur) or not _is_lime_xml(c_el, xfs_list, fills_list):
-                    continue
+                if _has_korean(cur):
+                    continue  # already Korean — never overwrite
+                if field_name not in force_write and not _is_lime_xml(c_el, xfs_list, fills_list):
+                    continue  # non-force field with non-lime English content — skip
 
-        fill_hex = None
-        if field_name in uncertain_fields:
-            fill_hex = 'FFFF00'
-        elif is_non_english and field_name in ('제목', '내용'):
-            fill_hex = 'CCFF99'
+        fill_hex = 'FFFF00' if field_name in uncertain_fields else 'BDD7EE'
 
         writes.append((col_idx, str(value), fill_hex))
 

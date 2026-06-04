@@ -59,6 +59,7 @@ KNOWN_AGENCIES = [
     (re.compile(r'Institute for Agricultural and Livestock Protection and Health|\bIPSA\b', re.IGNORECASE), '농축산물보호위생청(IPSA)'),
     (re.compile(r'ministry of agriculture and livestock', re.IGNORECASE), '농축산부(MAG)'),
     (re.compile(r'Servicio Nacional de Sanidad Agraria|National Agrarian Health Service|\bSENASA\b', re.IGNORECASE), '국립농업위생청(SENASA)'),
+    (re.compile(r'Instituto Colombiano Agropecuario|Colombian Agricultural Institute|\bICA\b', re.IGNORECASE), '콜롬비아농업청(ICA)'),
 ]
 
 OBJECTIVE_OPTIONS = [
@@ -726,10 +727,20 @@ def _translate_addendum_reg_title(doc, translations):
         return
 
     # Case 1: ___ is a top-level paragraph (common in WTO addendum docs).
-    # The regulation title is then the first non-empty, non-detectable table cell.
+    # Only scan tables that appear AFTER the separator in document body order.
+    body_children = list(doc.element.body)
     for para in doc.paragraphs:
         if re.match(r'^_+$', para.text.strip()):
+            try:
+                sep_idx = body_children.index(para._p)
+            except ValueError:
+                break
             for table in doc.tables:
+                try:
+                    if body_children.index(table._tbl) <= sep_idx:
+                        continue  # table is before the separator — skip
+                except ValueError:
+                    continue
                 for row in table.rows:
                     for cell in _unique_cells(row):
                         ctext = cell.text.strip()
