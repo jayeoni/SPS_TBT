@@ -381,19 +381,67 @@ def _extract_addendum_fields(doc, full_text):
     if m2:
         result['addendum_received_date'] = m2.group(1).strip()
 
-    # Extract regulation title and country advises paragraph from body
-    sep_pos = full_text.find('___')
-    if sep_pos != -1:
-        after_sep = full_text[sep_pos:].lstrip('_').lstrip()
-        lines = [l.strip() for l in after_sep.split('\n') if l.strip()]
-        if lines:
-            result['addendum_reg_title'] = lines[0]
+    # Extract regulation title and country advises paragraph from body.
+    # Use document body order rather than full_text: _all_text() puts all
+    # paragraphs before all table cells, so pre-separator form-table cells
+    # (e.g. the addendum notification Title row) appear AFTER ___ in full_text
+    # even though they are physically before the separator.
+    _WNS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+
+    def _el_text(el):
+        return ''.join(t.text or '' for t in el.iter(f'{{{_WNS}}}t'))
+
+    body_children = list(doc.element.body)
+    sep_para_idx = None
+    for para in doc.paragraphs:
+        if re.match(r'^_+$', para.text.strip()):
+            try:
+                sep_para_idx = body_children.index(para._p)
+                break
+            except ValueError:
+                pass
+
+    if sep_para_idx is not None:
+        # Traverse body elements after separator in document order
+        after_sep_texts = []
+        for child in body_children[sep_para_idx + 1:]:
+            local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+            if local == 'p':
+                text = _el_text(child).strip()
+                if text and not re.match(r'^_+$', text):
+                    after_sep_texts.append(text)
+            elif local == 'tbl':
+                seen_tc = set()
+                for tc in child.iter(f'{{{_WNS}}}tc'):
+                    if id(tc) in seen_tc:
+                        continue
+                    seen_tc.add(id(tc))
+                    text = _el_text(tc).strip()
+                    if text:
+                        after_sep_texts.append(text)
+        if after_sep_texts:
+            result['addendum_reg_title'] = after_sep_texts[0]
+        after_sep_joined = '\n'.join(after_sep_texts)
         advises_m = re.search(
-            r'\w[\w\s]+ hereby advises.+?(?=\n\s*\n|\Z)',
-            after_sep, re.DOTALL | re.IGNORECASE,
+            r'\w[\w\s]+ hereby (?:advises?|notif(?:ies|y)|informs?).+?(?=\n\s*\n|\Z)',
+            after_sep_joined, re.DOTALL | re.IGNORECASE,
         )
         if advises_m:
             result['addendum_country_advises'] = advises_m.group().strip()
+    else:
+        # Fallback: ___ not found as a top-level paragraph (may be inside a table)
+        sep_pos = full_text.find('___')
+        if sep_pos != -1:
+            after_sep = full_text[sep_pos:].lstrip('_').lstrip()
+            lines = [l.strip() for l in after_sep.split('\n') if l.strip()]
+            if lines:
+                result['addendum_reg_title'] = lines[0]
+            advises_m = re.search(
+                r'\w[\w\s]+ hereby advises.+?(?=\n\s*\n|\Z)',
+                after_sep, re.DOTALL | re.IGNORECASE,
+            )
+            if advises_m:
+                result['addendum_country_advises'] = advises_m.group().strip()
 
     # Find checked addendum type boxes
     addendum_types = {
@@ -487,7 +535,10 @@ def parse_notification(docx_path: str) -> dict:
         body = result['addendum']
         if body.get('addendum_reg_title'):
             result['title'] = body['addendum_reg_title']  # always use body title for addendum
-        if body.get('addendum_country_advises') and not result['description']:
+        if body.get('addendum_country_advises'):
+            # The addendum body text ("hereby advises/notifies") is always the correct
+            # description for the addendum, even if the form table also has a description.
+            # The form table description belongs to the original notification, not the addendum.
             result['description'] = body['addendum_country_advises']
 
     return result

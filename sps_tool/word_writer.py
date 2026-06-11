@@ -46,7 +46,7 @@ ROW_PATTERNS = {
                          'texto(s) disponible'],
     # Addendum-specific rows
     'addendum_intro':           ['the following communication', 'being circulated at the request'],
-    'addendum_country_advises': ['hereby advises', 'hereby notifies'],
+    'addendum_country_advises': ['hereby advises', 'hereby notifies', 'hereby informs'],
     'addendum_concerns':        ['this addendum concerns'],
     'addendum_comment_period_sec': ['comment period:'],
     'addendum_agency_comments': ['agency or authority designated to handle comments'],
@@ -816,6 +816,14 @@ def create_bilingual_docx(
                     row_type = _detect_row_type(c.text)
                     if row_type:
                         break
+
+            # Addendum fallback: _detect_row_type only scans first 150 chars.
+            # "hereby advises/notifies/informs" may appear beyond that limit
+            # when a long opening sentence precedes it — scan the full cell text.
+            if not row_type and is_addendum:
+                full_lower = content_cell.text.lower()
+                if any(pt in full_lower for pt in ROW_PATTERNS.get('addendum_country_advises', [])):
+                    row_type = 'addendum_country_advises'
 
             if not row_type or row_type not in ROW_BUILDERS:
                 continue
