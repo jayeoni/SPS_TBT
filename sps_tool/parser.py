@@ -2,11 +2,14 @@
 WTO SPS notification Word document parser.
 Extracts structured fields from the standardized WTO SPS form.
 """
+import logging
 import re
 import os
 from pathlib import Path
 import docx
 from docx.oxml.ns import qn
+
+log = logging.getLogger(__name__)
 
 
 # ── Label patterns for each field (English and Korean variants) ──────────────
@@ -421,13 +424,18 @@ def _extract_addendum_fields(doc, full_text):
                         after_sep_texts.append(text)
         if after_sep_texts:
             result['addendum_reg_title'] = after_sep_texts[0]
-        after_sep_joined = '\n'.join(after_sep_texts)
+        # Use double newline as cell separator so the regex stops at the first
+        # cell boundary — single \n would let the match run through all form rows.
+        after_sep_joined = '\n\n'.join(after_sep_texts)
         advises_m = re.search(
             r'\w[\w\s]+ hereby (?:advises?|notif(?:ies|y)|informs?).+?(?=\n\s*\n|\Z)',
             after_sep_joined, re.DOTALL | re.IGNORECASE,
         )
         if advises_m:
             result['addendum_country_advises'] = advises_m.group().strip()
+        log.info('[parser] addendum_country_advises (len=%d): %r',
+                 len(result['addendum_country_advises']),
+                 result['addendum_country_advises'][:120])
     else:
         # Fallback: ___ not found as a top-level paragraph (may be inside a table)
         sep_pos = full_text.find('___')

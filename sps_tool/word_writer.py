@@ -4,12 +4,15 @@ Translates all 13 rows of the WTO SPS notification form following the
 exact format used in reference translated files (26.3월 SPS 통보문_금영★).
 """
 import copy
+import logging
 import re
 import shutil
 from pathlib import Path
 from docx import Document
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+
+log = logging.getLogger(__name__)
 
 KOREAN_FONT = '맑은 고딕'
 LIME_RGB    = (204, 255, 153)
@@ -530,7 +533,8 @@ def _row_addendum_country_advises(cell_text, t):
     content_kr = t.get('내용', '')
     if not content_kr:
         return []
-    return [content_kr]
+    lines = [s.strip() for s in content_kr.split('\n') if s.strip()]
+    return lines if lines else [content_kr]
 
 
 def _row_addendum_concerns(cell_text, t):
@@ -825,6 +829,10 @@ def create_bilingual_docx(
                 if any(pt in full_lower for pt in ROW_PATTERNS.get('addendum_country_advises', [])):
                     row_type = 'addendum_country_advises'
 
+            if is_addendum:
+                log.info('[word_writer] addendum table row %d: row_type=%r cell[:80]=%r',
+                         row_idx, row_type, content_cell.text[:80])
+
             if not row_type or row_type not in ROW_BUILDERS:
                 continue
 
@@ -866,13 +874,16 @@ def create_bilingual_docx(
                     _add_paragraph(target_cell, line, t_font, para_style,
                                    bold=t_bold, italic=t_italic, underline=t_underline)
             elif is_addendum and row_type == 'addendum_country_advises':
-                # Insert Korean right after the matching paragraph (right below body text)
+                log.info('[word_writer] addendum_country_advises: korean_lines=%r', korean_lines)
                 patterns = ROW_PATTERNS.get(row_type, [])
+                # Search full paragraph text (not just first 150 chars) so that
+                # "hereby advises/notifies/informs" is found even in long intro sentences.
                 matching_para = next(
                     (p for p in content_cell.paragraphs
-                     if p.text.strip() and any(pt in p.text[:150].lower() for pt in patterns)),
+                     if p.text.strip() and any(pt in p.text.lower() for pt in patterns)),
                     None,
                 )
+                log.info('[word_writer] matching_para=%r', matching_para.text[:80] if matching_para else None)
                 if matching_para:
                     for line in reversed(korean_lines):
                         _insert_paragraph_after_para(matching_para, line, font_size)
@@ -880,6 +891,7 @@ def create_bilingual_docx(
                     for line in korean_lines:
                         _add_paragraph(content_cell, line, font_size, para_style,
                                        bold=bold, italic=italic, underline=underline)
+                log.info('[word_writer] addendum_country_advises: wrote %d line(s)', len(korean_lines))
             elif row_type == 'comments':
                 # 의견제출 마감일 → right after the date/sixty-days paragraph
                 # 의견 처리 담당기관 → right after the agency/"other body:" paragraph
