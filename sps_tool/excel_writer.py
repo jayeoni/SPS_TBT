@@ -183,37 +183,41 @@ def _get_or_add_fill_xf(styles_root, color_hex: str,
 
 # ── ZIP / XML internals ───────────────────────────────────────────────────────
 
-def _styles_insert_fill_xf(styles_bytes: bytes, color_hex: str) -> tuple:
+def _styles_insert_fill_xf(styles_bytes: bytes, color_hex: str, base_xf_idx: int = 0) -> tuple:
     """
-    Find or append a solid-fill XF entry in styles.xml using string surgery.
+    Append a solid-fill XF entry in styles.xml using string surgery.
     Returns (new_bytes, xf_index).
+
+    base_xf_idx: the 's' attribute value of the original cell; the new XF is
+    derived from that base XF so that borders, alignment, and wrap-text are
+    preserved — only the fill is changed.
 
     Preserves ALL existing XML byte-for-byte — only inserts text before closing
     tags.  This avoids lxml's round-trip serialization artefacts (namespace-prefix
     changes, attribute reordering) that corrupt Excel's theme-color font references
     in cells that were never touched by this tool.
     """
-    text        = styles_bytes.decode('utf-8')
-    rgb_upper   = color_hex.upper()          # e.g. 'CCFF99'
-    rgb_argb    = 'FF' + rgb_upper           # e.g. 'FFCCFF99'
+    text      = styles_bytes.decode('utf-8')
+    rgb_upper = color_hex.upper()
+    rgb_argb  = 'FF' + rgb_upper
 
     # ── Find existing fill with this colour ──────────────────────────────────
     fills_start = text.find('<fills')
     fills_end   = text.find('</fills>') + len('</fills>')
-
-    fill_idx  = None
+    fill_idx    = None
+    fill_starts = []
     if fills_start != -1 and fills_end > fills_start:
         fills_block = text[fills_start:fills_end]
         fill_starts = [m.start() for m in re.finditer(r'<fill\b', fills_block)]
         for i, pos in enumerate(fill_starts):
-            close = fills_block.find('</fill>', pos)
+            close   = fills_block.find('</fill>', pos)
             segment = fills_block[pos: close + len('</fill>')] if close != -1 else fills_block[pos:]
             if 'solid' in segment and (rgb_upper in segment.upper() or rgb_argb in segment.upper()):
                 fill_idx = i
                 break
 
     fill_count_m = re.search(r'<fills\b[^>]*\bcount="(\d+)"', text)
-    n_fills = int(fill_count_m.group(1)) if fill_count_m else len(fill_starts) if fills_start != -1 else 0
+    n_fills = int(fill_count_m.group(1)) if fill_count_m else len(fill_starts)
 
     if fill_idx is None:
         fill_idx = n_fills
@@ -231,37 +235,62 @@ def _styles_insert_fill_xf(styles_bytes: bytes, color_hex: str) -> tuple:
                 text, count=1,
             )
 
-    # ── Find existing XF that uses this fill ────────────────────────────────
-    xfs_start = text.find('<cellXfs')
-    xfs_end   = text.find('</cellXfs>') + len('</cellXfs>')
-
-    xf_idx = None
-    if xfs_start != -1 and xfs_end > xfs_start:
-        xfs_block   = text[xfs_start:xfs_end]
-        xf_starts   = [m.start() for m in re.finditer(r'<xf\b', xfs_block)]
-        for i, pos in enumerate(xf_starts):
-            sc = xfs_block.find('/>', pos)
-            segment = xfs_block[pos: sc + 2] if sc != -1 else xfs_block[pos: pos + 300]
-            if f'fillId="{fill_idx}"' in segment and 'applyFill="1"' in segment:
-                xf_idx = i
-                break
-
+    # ── Build new XF derived from the cell's original style ──────────────────
+    # Always append a new XF (never reuse existing ones) so that stale minimal
+    # XFs from old runs are not reused; the fill_xf cache in the caller handles
+    # intra-run deduplication.
+    xfs_start  = text.find('<cellXfs')
+    xfs_end    = text.find('</cellXfs>') + len('</cellXfs>')
+    xfs_block  = text[xfs_start:xfs_end] if (xfs_start != -1 and xfs_end > xfs_start) else ''
+    xf_starts  = [m.start() for m in re.finditer(r'<xf\b', xfs_block)]
     xf_count_m = re.search(r'<cellXfs\b[^>]*\bcount="(\d+)"', text)
-    n_xfs = int(xf_count_m.group(1)) if xf_count_m else (len(xf_starts) if xfs_start != -1 else 0)
+    n_xfs      = int(xf_count_m.group(1)) if xf_count_m else len(xf_starts)
 
-    if xf_idx is None:
-        xf_idx = n_xfs
+    # Extract the base XF's raw text so we can copy its borders/alignment/wrap
+    base_xf_text = None
+    if xf_starts:
+        idx  = min(base_xf_idx, len(xf_starts) - 1)
+        pos  = xf_starts[idx]
+        fend = xfs_block.find('</xf>', pos)
+        sc   = xfs_block.find('/>', pos)
+        if fend != -1 and (sc == -1 or fend < sc):
+            base_xf_text = xfs_block[pos: fend + len('</xf>')]
+        elif sc != -1:
+            base_xf_text = xfs_block[pos: sc + 2]
+
+    if base_xf_text:
+        # Split into opening-tag attributes and any child elements
+        gt_pos = base_xf_text.find('>')
+        is_self_closing = (gt_pos > 0 and base_xf_text[gt_pos - 1] == '/')
+        if is_self_closing:
+            opening  = base_xf_text[:gt_pos - 1]   # everything before the trailing '/'
+            children = ''
+        else:
+            opening  = base_xf_text[:gt_pos]        # everything before '>'
+            children = base_xf_text[gt_pos + 1:]    # child elements + </xf>
+
+        opening = re.sub(r'\bfillId="[^"]*"', f'fillId="{fill_idx}"', opening)
+        if 'fillId=' not in opening:
+            opening += f' fillId="{fill_idx}"'
+        opening = re.sub(r'\bapplyFill="[^"]*"', 'applyFill="1"', opening)
+        if 'applyFill=' not in opening:
+            opening += ' applyFill="1"'
+
+        new_xf_xml = opening + ('/>' if is_self_closing else '>') + children
+    else:
         new_xf_xml = (
             f'<xf numFmtId="0" fontId="0" fillId="{fill_idx}" '
             f'borderId="0" xfId="0" applyFill="1"/>'
         )
-        text = text.replace('</cellXfs>', new_xf_xml + '</cellXfs>', 1)
-        if xf_count_m:
-            text = re.sub(
-                r'(<cellXfs\b[^>]*\bcount=")(\d+)(")',
-                lambda m: m.group(1) + str(n_xfs + 1) + m.group(3),
-                text, count=1,
-            )
+
+    xf_idx = n_xfs
+    text = text.replace('</cellXfs>', new_xf_xml + '</cellXfs>', 1)
+    if xf_count_m:
+        text = re.sub(
+            r'(<cellXfs\b[^>]*\bcount=")(\d+)(")',
+            lambda m: m.group(1) + str(n_xfs + 1) + m.group(3),
+            text, count=1,
+        )
 
     return text.encode('utf-8'), xf_idx
 
@@ -448,7 +477,7 @@ def _direct_patch_xlsx(
 
     force_write = FORCE_WRITE_FIELDS | ({'해당품목', '목적', '발효일'} if is_non_english else {'제목', '내용'})
 
-    writes = []  # (col_idx, str_value, fill_hex | None)
+    writes = []  # (col_idx, str_value, fill_hex | None, original_s)
     for field_name in WRITABLE_FIELDS:
         value = fields.get(field_name)
         if value is None:
@@ -467,9 +496,10 @@ def _direct_patch_xlsx(
                 if field_name not in force_write and not _is_lime_xml(c_el, xfs_list, fills_list):
                     continue  # non-force field with non-lime English content — skip
 
-        fill_hex = 'FFFF00' if field_name in uncertain_fields else 'BDD7EE'
+        fill_hex   = 'FFFF00' if field_name in uncertain_fields else 'BDD7EE'
+        original_s = int(c_el.get('s', '0')) if c_el is not None else 0
 
-        writes.append((col_idx, str(value), fill_hex))
+        writes.append((col_idx, str(value), fill_hex, original_s))
 
     # Reviewer notes
     reportable = [f for f in uncertain_fields if col_map.get(f)]
@@ -477,29 +507,30 @@ def _direct_patch_xlsx(
         memo_col = col_map.get('검토메모', COL['검토메모'])
         memo_el  = cell_map.get(memo_col)
         if not (memo_el is not None and _cell_xml_value(memo_el, ss_strings).strip()):
-            writes.append((memo_col, '검토 필요: ' + ', '.join(reportable), None))
+            memo_s = int(memo_el.get('s', '0')) if memo_el is not None else 0
+            writes.append((memo_col, '검토 필요: ' + ', '.join(reportable), None, memo_s))
 
     if writes:
         # Resolve fill XF indices via byte surgery — never re-serialise styles.xml
         # through lxml, which changes namespace prefixes and corrupts theme-colour
         # font references in every cell that uses those XF entries.
         fill_xf: dict = {}
-        for _, _, fill_hex in writes:
-            if fill_hex and fill_hex not in fill_xf:
-                new_styles, xf_idx = _styles_insert_fill_xf(raw['xl/styles.xml'], fill_hex)
-                fill_xf[fill_hex] = xf_idx
+        for _, _, fill_hex, original_s in writes:
+            if fill_hex and (original_s, fill_hex) not in fill_xf:
+                new_styles, xf_idx = _styles_insert_fill_xf(raw['xl/styles.xml'], fill_hex, original_s)
+                fill_xf[(original_s, fill_hex)] = xf_idx
                 raw['xl/styles.xml'] = new_styles  # accumulate changes across colours
 
         # Apply writes
-        for col_idx, value, fill_hex in writes:
+        for col_idx, value, fill_hex, original_s in writes:
             c_el = cell_map.get(col_idx)
             if c_el is None:
                 c_el = _ET.Element(f'{{{_SS}}}c')
                 c_el.set('r', f'{get_column_letter(col_idx)}{row_idx}')
                 cell_map[col_idx] = c_el
 
-            if fill_hex and fill_hex in fill_xf:
-                c_el.set('s', str(fill_xf[fill_hex]))
+            if fill_hex and (original_s, fill_hex) in fill_xf:
+                c_el.set('s', str(fill_xf[(original_s, fill_hex)]))
             # else: keep original 's' (style index) untouched
 
             for tag in (f'{{{_SS}}}v', f'{{{_SS}}}is', f'{{{_SS}}}f'):
