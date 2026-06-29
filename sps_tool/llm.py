@@ -216,7 +216,7 @@ Return ONLY this JSON object (no other text):
   "해당품목": "Korean translation of 'Products covered'. Keep scientific names in parentheses. Korean modifier-first order: qualifying phrases (disease risk, origin, conditions) come BEFORE the noun — e.g., 'pigs and genetic material, products and by-products of swine origin at risk of transmitting the Aujeszky\\'s disease virus' → '오제스키병 바이러스 전파 위험이 있는 돼지 및 돼지 유래 유전 물질, 제품 및 부산물'. Do NOT copy from 주간보고.",
   "기타문서": "Follow 기타문서 TRANSLATION RULES above. Reference lines only — no URLs, no commentary. Empty string if genuinely empty.",
   "목적": "ONLY objectives explicitly checked in 'Objectives (checked)'. Exact phrases, semicolons between: 식품안전/동물위생/식물보호/동식물 해충·질병으로부터 사람 보호/해충으로 인한 피해로부터의 영토 보호. Empty string if none checked.",
-  "목적_근거": "개조식 Korean translation of ONLY the free-text from 'Objective/rationale text'. Empty if that field is empty or has only checkboxes.",
+  "목적_근거": "개조식 Korean translation of ONLY the free-text rationale from 'Objective/rationale text' input. Do NOT include any content from 'Description'. Empty string if 'Objective/rationale text' is empty or contains only checkboxes.",
   "해당국가": "Korean country name or '모든 교역국'",
   "통보국_kr": "Korean name of the notifying member country",
   "담당기관_kr": "Korean name of the agency; keep acronym in parentheses e.g. 동식물위생관리규제청(AGROCALIDAD)",
@@ -268,6 +268,142 @@ def _process_with_anthropic(parsed: dict, export_items: str, terminology: dict, 
     return _parse_llm_response(raw)
 
 
+def _ollama_call(payload_bytes: bytes, timeout: int = 600, model: str = '') -> str:
+    """Send a payload to Ollama /api/chat and return the response content string."""
+    for attempt in range(2):
+        req = urllib.request.Request(
+            f'{OLLAMA_BASE_URL}/api/chat',
+            data=payload_bytes,
+            method='POST',
+            headers={'Content-Type': 'application/json'},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read())
+                return data['message']['content'].strip()
+        except TimeoutError:
+            if attempt == 0:
+                continue
+            raise ValueError(
+                'Ollama 응답 시간 초과 (2회 시도).\n'
+                'Ollama가 실행 중인지, 모델이 정상적으로 로드되었는지 확인하세요.'
+            )
+        except urllib.error.URLError as e:
+            msg = str(e).lower()
+            if 'connection refused' in msg or 'connect' in msg:
+                raise ValueError(
+                    'Ollama에 연결할 수 없습니다.\n'
+                    '1. https://ollama.com 에서 Ollama를 설치하세요.\n'
+                    '2. 터미널에서 실행: ollama serve\n'
+                    f'3. 모델 다운로드: ollama pull {model or "<model>"}'
+                )
+            raise ValueError(f'Ollama 오류: {e}')
+        except Exception as e:
+            resp_text = ''
+            if hasattr(e, 'read'):
+                try:
+                    resp_text = e.read().decode('utf-8', errors='replace')
+                except Exception:
+                    pass
+            if 'model' in resp_text.lower() and 'not found' in resp_text.lower():
+                raise ValueError(
+                    f'Ollama 모델 "{model}"을 찾을 수 없습니다.\n'
+                    f'설치 명령: ollama pull {model}'
+                )
+            raise ValueError(f'Ollama 처리 오류: {e}')
+    return ''
+
+
+def _translate_title_and_products_ollama(
+    title_text: str, products_text: str, terminology: dict, model: str
+) -> dict:
+    """
+    Dedicated focused Ollama call for 제목 + 해당품목 translation only.
+
+    Small LLMs perform much better on a two-field translation prompt than when
+    buried inside the 18-field classification prompt.  No 주간보고 examples
+    are included here, so the model cannot accidentally copy product names.
+    Returns a dict with keys '제목' and '해당품목'; empty strings on failure.
+    """
+    fallback = {'제목': '', '해당품목': ''}
+    if not title_text and not products_text:
+        return fallback
+
+    doc_text = f'{title_text} {products_text}'
+    selected = _select_terms(terminology, doc_text, max_terms=30)
+    term_lines = '\n'.join(f'  {k} → {v}' for k, v in selected)
+
+    prompt = f"""Translate two fields from a WTO SPS notification into Korean.
+Return ONLY valid JSON with keys "제목" and "해당품목". No other text.
+
+=== 제목 (Title) RULES ===
+- Translate ONLY the title text — ignore any Language/Number-of-pages metadata lines.
+- Resolution format: "Resolution No. X-Y-Z" or "Resolución No. X-Y-Z"
+    → "결의안 제X-Y-Z호" (NEVER keep "No." in the Korean output)
+- Standard structure:
+    "[country_kr]산 [product_kr] 수입에 대한 [requirement_kr]을 규정하는 결의안 제[number]호"
+- Keep scientific names in parentheses exactly as written.
+- Translate origin phrases as '[country_kr]산':
+    "originating in Peru" → "페루산" | "procedente de Argentina" → "아르헨티나산"
+- If title is NOT a Resolution, translate it naturally into Korean.
+
+제목 EXAMPLES (format only — never copy product/country names into unrelated documents):
+  "Resolution No. 175-2026-IPSA establishing phytosanitary requirements for fresh [X] (Xx. xx) from [Y]"
+    → "[Y_kr]산 신선한 [X_kr](Xx. xx) 수입에 대한 식물검역요건을 규정하는 결의안 제175-2026-IPSA호"
+  "Resolución No. 045-2025 que establece los requisitos sanitarios para la importación de [X] (Xx. xx) procedente de [Y]"
+    → "[Y_kr]산 [X_kr](Xx. xx) 수입에 대한 위생요건을 규정하는 결의안 제045-2025호"
+
+=== 해당품목 (Products covered) RULES ===
+- Keep scientific names in parentheses exactly as written — never translate them.
+- Korean modifier-first: qualifying clauses come BEFORE the noun.
+    "pigs at risk of transmitting Aujeszky's disease virus"
+      → "오제스키병 바이러스 전파 위험이 있는 돼지"
+    "products and by-products of swine origin"
+      → "돼지 유래 제품 및 부산물"
+
+=== TERMINOLOGY ===
+{term_lines}
+
+=== INPUT ===
+Title: {title_text}
+Products covered: {products_text}
+
+=== OUTPUT (JSON only) ===
+{{"제목": "...", "해당품목": "..."}}"""
+
+    payload = json.dumps({
+        'model': model,
+        'messages': [
+            {'role': 'system', 'content': 'You are a Korean agricultural document translator. Output ONLY valid JSON.'},
+            {'role': 'user', 'content': prompt},
+        ],
+        'stream': False,
+        'options': {
+            'temperature': 0.05,
+            'num_predict': 512,
+            'num_ctx': 8192,
+        },
+    }).encode('utf-8')
+
+    try:
+        raw = _ollama_call(payload, timeout=180, model=model)
+        raw = _RE_MD_FENCE.sub('', raw)
+        raw = _RE_MD_CLOSE.sub('', raw).strip()
+        if not raw.startswith('{'):
+            m = _RE_JSON_OBJ.search(raw)
+            raw = m.group() if m else '{}'
+        parsed = json.loads(raw)
+        result = {}
+        for key in ('제목', '해당품목'):
+            val = str(parsed.get(key, '')).strip()
+            # Reject if it looks like a verbatim copy of the English input
+            if val and val.lower() != (title_text if key == '제목' else products_text).lower():
+                result[key] = val
+        return result
+    except Exception:
+        return fallback
+
+
 def _process_with_ollama(parsed: dict, export_items: str, terminology: dict, model: str) -> dict:
     user_prompt = _build_user_prompt(parsed, export_items, terminology)
     payload = json.dumps({
@@ -284,48 +420,26 @@ def _process_with_ollama(parsed: dict, export_items: str, terminology: dict, mod
         },
     }).encode('utf-8')
 
-    for attempt in range(2):  # retry once on timeout (model cold-start)
-        req = urllib.request.Request(
-            f'{OLLAMA_BASE_URL}/api/chat',
-            data=payload,
-            method='POST',
-            headers={'Content-Type': 'application/json'},
+    raw = _ollama_call(payload, timeout=600, model=model)
+    result = _parse_llm_response(raw)
+
+    # Override 제목 + 해당품목 with a dedicated focused two-field translation call.
+    # The small model translates these text fields much better when given a focused
+    # prompt without all the classification rules and 주간보고 examples.
+    title_text = '\n'.join(
+        ln for ln in parsed.get('title', '').split('\n')
+        if not _RE_LANG_PAGE.match(ln)
+    ).strip()
+    products_text = parsed.get('products', '')
+    if title_text or products_text:
+        overrides = _translate_title_and_products_ollama(
+            title_text, products_text, terminology, model
         )
-        try:
-            with urllib.request.urlopen(req, timeout=600) as resp:
-                data = json.loads(resp.read())
-                raw = data['message']['content'].strip()
-            return _parse_llm_response(raw)
-        except TimeoutError:
-            if attempt == 0:
-                continue
-            raise ValueError(
-                'Ollama 응답 시간 초과 (2회 시도).\n'
-                'Ollama가 실행 중인지, 모델이 정상적으로 로드되었는지 확인하세요.'
-            )
-        except urllib.error.URLError as e:
-            msg = str(e).lower()
-            if 'connection refused' in msg or 'connect' in msg:
-                raise ValueError(
-                    'Ollama에 연결할 수 없습니다.\n'
-                    '1. https://ollama.com 에서 Ollama를 설치하세요.\n'
-                    '2. 터미널에서 실행: ollama serve\n'
-                    f'3. 모델 다운로드: ollama pull {model}'
-                )
-            raise ValueError(f'Ollama 오류: {e}')
-        except Exception as e:
-            resp_text = ''
-            if hasattr(e, 'read'):
-                try:
-                    resp_text = e.read().decode('utf-8', errors='replace')
-                except Exception:
-                    pass
-            if 'model' in resp_text.lower() and 'not found' in resp_text.lower():
-                raise ValueError(
-                    f'Ollama 모델 "{model}"을 찾을 수 없습니다.\n'
-                    f'설치 명령: ollama pull {model}'
-                )
-            raise ValueError(f'Ollama 처리 오류: {e}')
+        for key in ('제목', '해당품목'):
+            if overrides.get(key):
+                result[key] = overrides[key]
+
+    return result
 
 
 def check_ollama_status(model: str = MODEL_OLLAMA_DEFAULT) -> dict:

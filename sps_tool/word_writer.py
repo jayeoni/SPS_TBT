@@ -399,7 +399,13 @@ def _row_objective(cell_text, t):
         parts.append(f'{cb} {kr_label}')
     lines = ['목적 및 근거: ' + ', '.join(parts)]
     if t.get('목적_근거'):
-        lines += [s.strip() for s in t['목적_근거'].split('\n') if s.strip()]
+        # Guard: strip any lines that are actually description content (내용)
+        # that the LLM mistakenly appended to 목적_근거.
+        desc_lines = {s.strip() for s in t.get('내용', '').split('\n') if s.strip()}
+        for s in t['목적_근거'].split('\n'):
+            s = s.strip()
+            if s and s not in desc_lines:
+                lines.append(s)
     return lines
 
 

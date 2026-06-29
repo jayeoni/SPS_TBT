@@ -475,7 +475,7 @@ def _direct_patch_xlsx(
     # Build cell map for target row
     cell_map = {_col_num(c.get('r', '')): c for c in row_el.findall(f'{{{_SS}}}c')}
 
-    force_write = FORCE_WRITE_FIELDS | ({'해당품목', '목적', '발효일'} if is_non_english else {'제목', '내용'})
+    force_write = FORCE_WRITE_FIELDS | ({'해당품목', '목적', '발효일'} if is_non_english else set())
 
     writes = []  # (col_idx, str_value, fill_hex | None, original_s)
     for field_name in WRITABLE_FIELDS:
@@ -496,10 +496,7 @@ def _direct_patch_xlsx(
                 if field_name not in force_write and not _is_lime_xml(c_el, xfs_list, fills_list):
                     continue  # non-force field with non-lime English content — skip
 
-        fill_hex   = 'FFFF00' if field_name in uncertain_fields else 'BDD7EE'
-        original_s = int(c_el.get('s', '0')) if c_el is not None else 0
-
-        writes.append((col_idx, str(value), fill_hex, original_s))
+        writes.append((col_idx, str(value)))
 
     # Reviewer notes
     reportable = [f for f in uncertain_fields if col_map.get(f)]
@@ -507,31 +504,18 @@ def _direct_patch_xlsx(
         memo_col = col_map.get('검토메모', COL['검토메모'])
         memo_el  = cell_map.get(memo_col)
         if not (memo_el is not None and _cell_xml_value(memo_el, ss_strings).strip()):
-            memo_s = int(memo_el.get('s', '0')) if memo_el is not None else 0
-            writes.append((memo_col, '검토 필요: ' + ', '.join(reportable), None, memo_s))
+            writes.append((memo_col, '검토 필요: ' + ', '.join(reportable)))
 
     if writes:
-        # Resolve fill XF indices via byte surgery — never re-serialise styles.xml
-        # through lxml, which changes namespace prefixes and corrupts theme-colour
-        # font references in every cell that uses those XF entries.
-        fill_xf: dict = {}
-        for _, _, fill_hex, original_s in writes:
-            if fill_hex and (original_s, fill_hex) not in fill_xf:
-                new_styles, xf_idx = _styles_insert_fill_xf(raw['xl/styles.xml'], fill_hex, original_s)
-                fill_xf[(original_s, fill_hex)] = xf_idx
-                raw['xl/styles.xml'] = new_styles  # accumulate changes across colours
-
-        # Apply writes
-        for col_idx, value, fill_hex, original_s in writes:
+        # Apply writes — only the text value is changed; the cell's 's' attribute
+        # (style index) is never touched, so borders, fill, alignment, and font
+        # colours are preserved exactly as they were.  styles.xml is never modified.
+        for col_idx, value in writes:
             c_el = cell_map.get(col_idx)
             if c_el is None:
                 c_el = _ET.Element(f'{{{_SS}}}c')
                 c_el.set('r', f'{get_column_letter(col_idx)}{row_idx}')
                 cell_map[col_idx] = c_el
-
-            if fill_hex and (original_s, fill_hex) in fill_xf:
-                c_el.set('s', str(fill_xf[(original_s, fill_hex)]))
-            # else: keep original 's' (style index) untouched
 
             for tag in (f'{{{_SS}}}v', f'{{{_SS}}}is', f'{{{_SS}}}f'):
                 for el in list(c_el.findall(tag)):
