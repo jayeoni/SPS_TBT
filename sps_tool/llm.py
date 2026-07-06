@@ -29,6 +29,8 @@ _RE_JSON_OBJ  = re.compile(r'\{.*\}', re.DOTALL)
 # where they are near the actual data.
 SYSTEM_PROMPT = """You are an expert Korean government document analyst processing WTO SPS notifications for MAFRA (농림축산식품부).
 
+CRITICAL LANGUAGE RULE: ALL translated text fields must be written in Korean (한국어). NEVER output Chinese (中文/중국어) — even though this model is Chinese-based, every translation must be in Korean only.
+
 Output ONLY valid JSON — no markdown fences, no explanation, no text outside the JSON object."""
 
 
@@ -374,7 +376,7 @@ Products covered: {products_text}
     payload = json.dumps({
         'model': model,
         'messages': [
-            {'role': 'system', 'content': 'You are a Korean agricultural document translator. Output ONLY valid JSON.'},
+            {'role': 'system', 'content': 'You are a Korean agricultural document translator. Output ONLY valid JSON. All translated text must be in Korean (한국어) — NEVER Chinese (中文).'},
             {'role': 'user', 'content': prompt},
         ],
         'stream': False,

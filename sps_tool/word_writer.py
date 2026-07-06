@@ -24,9 +24,18 @@ LANG_KR = {
 }
 
 MONTH_KR = {
+    # English
     'january': '1월', 'february': '2월', 'march': '3월', 'april': '4월',
     'may': '5월', 'june': '6월', 'july': '7월', 'august': '8월',
     'september': '9월', 'october': '10월', 'november': '11월', 'december': '12월',
+    # Spanish
+    'enero': '1월', 'febrero': '2월', 'marzo': '3월', 'abril': '4월',
+    'mayo': '5월', 'junio': '6월', 'julio': '7월', 'agosto': '8월',
+    'septiembre': '9월', 'octubre': '10월', 'noviembre': '11월', 'diciembre': '12월',
+    # Portuguese
+    'janeiro': '1월', 'fevereiro': '2월', 'março': '3월',
+    'junho': '6월', 'julho': '7월', 'setembro': '9월',
+    'outubro': '10월', 'novembro': '11월', 'dezembro': '12월',
 }
 
 # Row detection patterns: checked against first 150 chars of content cell (lowercase)
@@ -134,35 +143,55 @@ def _unique_cells(row):
 
 
 def _translate_date(text: str) -> str:
-    """Convert 'D Month YYYY' patterns to 'YYYY년 M월 D일'."""
+    """Convert date patterns to 'YYYY년 M월 D일'. Handles English and Spanish/Portuguese."""
     def _repl(m):
         day = str(int(m.group(1)))
         month_kr = MONTH_KR.get(m.group(2).lower(), m.group(2))
         return f'{m.group(3)}년 {month_kr} {day}일'
-    return re.sub(
-        r'(\d{1,2})\s+'
-        r'(January|February|March|April|May|June|July|August|'
-        r'September|October|November|December)\s+(\d{4})',
-        _repl, text, flags=re.IGNORECASE,
+
+    _EN_MONTHS = (
+        r'January|February|March|April|May|June|July|August|'
+        r'September|October|November|December'
     )
+    _ES_MONTHS = (
+        r'enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre'
+        r'|janeiro|fevereiro|março|junho|julho|setembro|outubro|novembro|dezembro'
+    )
+    # English: "16 March 2026"
+    text = re.sub(rf'(\d{{1,2}})\s+({_EN_MONTHS})\s+(\d{{4}})', _repl, text, flags=re.IGNORECASE)
+    # Spanish/Portuguese: "16 de mayo de 2026" or "16 de mayo 2026"
+    text = re.sub(rf'(\d{{1,2}})\s+de\s+({_ES_MONTHS})\s+(?:de\s+)?(\d{{4}})', _repl, text, flags=re.IGNORECASE)
+    return text
 
 
 def _translate_date_phrase(text: str) -> str:
     """Translate standard date phrases and apply date conversion."""
+    # Fixed-phrase substitutions (most specific first)
     text = re.sub(r'(?i)to be determined after the end of the consultation period\.?',
                   '의견수렴기간 종료 후 결정', text)
     text = re.sub(r'(?i)to be determined', '추후 결정', text)
+    text = re.sub(r'(?i)immediately\s+upon\s+(?:adoption|signature of the resolution)\.?', '채택 즉시', text)
+    text = re.sub(r'(?i)immediately\s+upon\s+publication(?:\s+of\s+the\s+regulation)?\.?', '공표 즉시', text)
+    text = re.sub(r'(?i)on\s+the\s+date\s+of\s+adoption\.?', '채택일', text)
+    text = re.sub(r'(?i)on\s+the\s+date\s+of\s+publication\.?', '공표일', text)
+    text = re.sub(r'(?i)upon\s+publication\s+in\s+the\s+official\s+journal\.?', '관보게재일', text)
+    text = re.sub(r'(?i)the\s+resolution\s+will\s+enter\s+into\s+force\s+upon\s+signature\.?',
+                  '본 결의안은 서명 시 발효예정', text)
+    text = re.sub(r'(?i)\bupon\s+signature\.?', '서명 시 발효예정', text)
     text = re.sub(
         r'(?i)approximately\s+(\d+)\s+days?\s+from\s+the\s+date\s+of\s+publication[^\n.]*',
         lambda m: f'관보 게재일로부터 약 {m.group(1)}일 후', text)
     text = re.sub(
         r'(?i)(\d+)\s+days?\s+after\s+publication\s+in\s+the\s+official\s+journal\.?',
         lambda m: f'관보 게재일로부터 {m.group(1)}일 후', text)
-    text = re.sub(r'(?i)upon publication in the official journal\.?', '관보게재일', text)
-    text = re.sub(r'(?i)the resolution will enter into force upon signature\.?',
-                  '본 결의안은 서명 시 발효예정', text)
-    text = re.sub(r'(?i)\bupon signature\.?', '서명 시 발효예정', text)
-    return _translate_date(text)
+    # Spanish: "a partir de la publicación en el Diario Oficial" etc.
+    text = re.sub(r'(?i)a\s+partir\s+de\s+(?:la\s+)?publicaci[oó]n\s+(?:en\s+el\s+Diario\s+Oficial)?\.?',
+                  '관보 게재일로부터', text)
+    # Convert dates first, then strip "Not before"/"No earlier than" prefixes
+    text = _translate_date(text)
+    text = re.sub(r'(?i)not\s+before\s+', '', text)
+    text = re.sub(r'(?i)no\s+earlier\s+than\s+', '', text)
+    return text
 
 
 def _checkbox(text: str, option_prefix: str) -> str:
@@ -475,13 +504,20 @@ def _row_other_docs(cell_text, t):
 
 
 def _row_adoption_date(cell_text, t):
-    def _extract(label_pattern):
-        m = re.search(label_pattern + r'[^:]*:\s*(.+?)(?=\n|Proposed date of pub|$)',
-                      cell_text, re.IGNORECASE | re.DOTALL)
-        return _translate_date_phrase(m.group(1).strip()) if m else '추후 결정'
+    def _extract(*label_patterns):
+        for pattern in label_patterns:
+            m = re.search(
+                pattern + r'[^:]*:\s*(.+?)(?=\n|Proposed date|Fecha propuesta|$)',
+                cell_text, re.IGNORECASE | re.DOTALL,
+            )
+            if m:
+                val = m.group(1).strip()
+                if val:
+                    return _translate_date_phrase(val)
+        return '추후 결정'
 
-    adopt = _extract(r'Proposed date of adoption')
-    pub   = _extract(r'Proposed date of publication')
+    adopt = _extract(r'Proposed date of adoption', r'Fecha propuesta de adopci')
+    pub   = _extract(r'Proposed date of publication', r'Fecha propuesta de publicaci')
     return [
         f'채택예정일 [날짜(일/월/년)]: {adopt}',
         f'공표예정일 [날짜(일/월/년)]: {pub}',
@@ -492,7 +528,14 @@ def _row_entry_force(cell_text, t):
     six_cb   = _checkbox(cell_text, 'Six months')
     trade_cb = _checkbox(cell_text, 'Trade facilitating')
 
-    m = re.search(r'and/or\s*\(dd/mm/yy\):\s*(.+?)(?:\n|$)', cell_text, re.IGNORECASE)
+    # Spanish fallbacks for checkboxes
+    if six_cb == '[  ]' and re.search(r'(?:\[[Xx☒]\]|☒)[^\n]*(?:seis\s+meses|6\s+meses)', cell_text, re.IGNORECASE):
+        six_cb = '[X]'
+    if trade_cb == '[  ]' and re.search(r'(?:\[[Xx☒]\]|☒)[^\n]*facilitaci[oó]n\s+del\s+comercio', cell_text, re.IGNORECASE):
+        trade_cb = '[X]'
+
+    # Accept both English "and/or (dd/mm/yy)" and Spanish "y/o (dd/mm/aa)"
+    m = re.search(r'(?:and/or|y/o)\s*\(dd/mm/(?:yy|aa)\):\s*(.+?)(?:\n|$)', cell_text, re.IGNORECASE)
     date_kr = _translate_date_phrase(m.group(1).strip()) if m else ''
 
     return [
