@@ -69,6 +69,7 @@ ROW_PATTERNS = {
 KNOWN_AGENCIES = [
     (re.compile(r'state phytosanitary service', re.IGNORECASE), '식물위생청(SFE)'),
     (re.compile(r'Institute for Agricultural and Livestock Protection and Health|\bIPSA\b', re.IGNORECASE), '농축산물보호위생청(IPSA)'),
+    (re.compile(r'Agencia de Regulaci[oó]n y Control Fito y Zoosanitario|\bAGROCALIDAD\b', re.IGNORECASE), '동식물위생관리규제청(AGROCALIDAD)'),
     (re.compile(r'ministry of agriculture and livestock', re.IGNORECASE), '농축산부(MAG)'),
     (re.compile(r'Servicio Nacional de Sanidad Agraria|National Agrarian Health Service|\bSENASA\b', re.IGNORECASE), '국립농업위생청(SENASA)'),
     (re.compile(r'Instituto Colombiano Agropecuario|Colombian Agricultural Institute|\bICA\b', re.IGNORECASE), '콜롬비아농업청(ICA)'),
@@ -218,14 +219,55 @@ def _extract_email(text: str) -> str:
     return m.group(0) if m else ''
 
 
+def _para_fmt(para):
+    """Return (bold, italic, underline) for a paragraph.
+
+    Uses character-weighted majority: a property is True only when more than
+    half of the visible text characters have it explicitly set.  This prevents
+    a small italic run (e.g. a parenthetical example) from tainting an entire
+    paragraph whose main content is plain text.  Falls back to paragraph-mark
+    rPr only when NO run carries any explicit value.
+    """
+    non_empty = [r for r in para.runs if r.text.strip()]
+    if not non_empty:
+        return False, False, False
+
+    total = sum(len(r.text) for r in non_empty)
+    if total == 0:
+        return False, False, False
+
+    def _majority(get_prop, ppr_tag, underline=False):
+        true_chars  = sum(len(r.text) for r in non_empty if get_prop(r) is True)
+        false_chars = sum(len(r.text) for r in non_empty if get_prop(r) is False)
+        if true_chars > total / 2:
+            return True
+        if true_chars == 0 and false_chars == 0:
+            # All runs inherited (None) — fall back to paragraph-mark rPr
+            pPr = para._p.find(qn('w:pPr'))
+            if pPr is not None:
+                rPr_el = pPr.find(qn('w:rPr'))
+                if rPr_el is not None:
+                    el = rPr_el.find(qn(ppr_tag))
+                    if el is not None:
+                        bad = ('none', '', 'false', '0', 'off') if underline else ('false', '0', 'off')
+                        return el.get(qn('w:val'), '') not in bad
+        return False
+
+    b = _majority(lambda r: r.bold,      'w:b')
+    i = _majority(lambda r: r.italic,    'w:i')
+    u = _majority(lambda r: r.underline, 'w:u', underline=True)
+    return b, i, u
+
+
 def _get_cell_style(cell):
     """Return (font_size, para_style, bold, italic, underline) in a single pass.
 
-    bold/italic/underline are set only when uniform across all content runs;
-    mixed cells return None for that property so Korean text stays plain.
+    bold/italic/underline are True when more than half of the visible character
+    content in the cell has that property explicitly set.  This prevents a single
+    italic parenthetical from tainting an entire cell's formatting.
     """
     font_size = para_style = None
-    seen_bold = seen_italic = seen_underline = set()
+    total = bold_chars = italic_chars = under_chars = 0
 
     for para in cell.paragraphs:
         if para_style is None and para.runs:
@@ -234,14 +276,18 @@ def _get_cell_style(cell):
             if font_size is None and run.font.size:
                 font_size = run.font.size
             if run.text.strip():
-                seen_bold.add(run.bold is True)
-                seen_italic.add(run.italic is True)
-                seen_underline.add(run.underline is True)
+                n = len(run.text)
+                total += n
+                if run.bold      is True: bold_chars  += n
+                if run.italic    is True: italic_chars += n
+                if run.underline is True: under_chars  += n
 
-    # Apply a property only when every content run agrees (all True or all non-True)
-    bold      = True if seen_bold      == {True} else None
-    italic    = True if seen_italic    == {True} else None
-    underline = True if seen_underline == {True} else None
+    if total == 0:
+        return font_size, para_style, None, None, None
+
+    bold      = True if bold_chars  > total / 2 else None
+    italic    = True if italic_chars > total / 2 else None
+    underline = True if under_chars  > total / 2 else None
     return font_size, para_style, bold, italic, underline
 
 
@@ -285,6 +331,37 @@ def _add_paragraph(cell, text: str, font_size=None, style_name=None, bold=None, 
         run.italic = italic
     if underline is not None:
         run.underline = underline
+
+
+def _add_rich_paragraph(cell, runs_data, font_size=None, style_name=None,
+                        default_bold=None, default_underline=None):
+    """Create a paragraph whose runs each carry independent formatting.
+
+    runs_data: iterable of (text, bold, italic, underline) tuples.
+      - True / False = explicitly set that property on the run.
+      - None         = fall back to default_bold / default_underline for b/u;
+                       for italic, None means "no italic" (leave unset).
+    default_bold / default_underline are applied when the run's own value is None.
+    """
+    try:
+        para = cell.add_paragraph(style=style_name)
+    except Exception:
+        para = cell.add_paragraph()
+    for text, b, it, u in runs_data:
+        if not text:
+            continue
+        run = para.add_run(text)
+        _apply_korean_font(run)
+        if font_size:
+            run.font.size = font_size
+        eff_b = b if b is not None else default_bold
+        eff_u = u if u is not None else default_underline
+        if eff_b is not None:
+            run.bold = eff_b
+        if it is not None:
+            run.italic = it
+        if eff_u is not None:
+            run.underline = eff_u
 
 
 # ── Per-row translation builders ──────────────────────────────────────────────
@@ -470,12 +547,27 @@ def _row_standards(cell_text, t):
     conf_yes = '[X]' if m_conf and re.search(r'[Xx☒☑✓]', m_conf.group(1)) else '[  ]'
     conf_no  = '[X]' if m_conf and re.search(r'[Xx☒☑✓]', m_conf.group(2)) else '[  ]'
 
-    lines = ['관련 국제기준이 있는가? 있다면, 해당 기준을 표시']
-    lines.append(f'{codex_cb} 국제식품규격위원회(Codex Alimentarius Commission) [예 ; Codex 규정 또는 관련문서의 제목 또는 문서번호] : {codex_extra}')
-    lines.append(f'{oie_cb}  세계동물보건기구(OIE) (예 : 육상동물 또는 수생동물 위생규약, Chapter 번호) :  {oie_extra}')
-    ippc_label = f'{ippc_cb} 국제식물보호협약(International Plant Protection Convention) [예: 식물위생조치를 위한 국제 기준(ISPM) 번호] :'
     ispm_str = _expand_ispm_numbers(ippc_extra)
-    lines.append(f'{ippc_label} {ispm_str or ippc_extra}')
+
+    # Rich paragraphs: each checkbox line has a plain label segment (italic=False)
+    # and a bracketed-example segment (italic=True), then a value segment (italic=False).
+    # Bold is left as None so the main loop can fill in the cell-level default.
+    lines = ['관련 국제기준이 있는가? 있다면, 해당 기준을 표시']
+    lines.append([
+        (f'{codex_cb} 국제식품규격위원회(Codex Alimentarius Commission) ', None, False, None),
+        ('[예 ; Codex 규정 또는 관련문서의 제목 또는 문서번호]', None, True, None),
+        (f' : {codex_extra}', None, False, None),
+    ])
+    lines.append([
+        (f'{oie_cb}  세계동물보건기구(OIE) ', None, False, None),
+        ('(예 : 육상동물 또는 수생동물 위생규약, Chapter 번호)', None, True, None),
+        (f' :  {oie_extra}', None, False, None),
+    ])
+    lines.append([
+        (f'{ippc_cb} 국제식물보호협약(International Plant Protection Convention) ', None, False, None),
+        ('[예: 식물위생조치를 위한 국제 기준(ISPM) 번호]', None, True, None),
+        (f' : {ispm_str or ippc_extra}', None, False, None),
+    ])
     lines.append(f'{none_cb}  없음')
     lines.append('제안된 규정이 관련 국제기준과 일치하는가?')
     lines.append(f'{conf_yes} 예   {conf_no} 아니오')
@@ -663,13 +755,12 @@ ADDENDUM_CONCERN_OPTIONS = [
 def _insert_paragraph_after_para(para, text, font_size=None, *, before=False):
     """Insert a new paragraph with Korean text immediately after para using XML.
     Copies paragraph and run properties (indentation, bold, underline, etc.) from the source."""
-    # Only apply bold/italic/underline when ALL content runs share that property;
-    # mixed paragraphs (e.g. bold label + plain body) should produce plain Korean text.
     non_empty_runs = [r for r in para.runs if r.text.strip()]
     if non_empty_runs:
-        src_bold      = True if all(r.bold      is True for r in non_empty_runs) else None
-        src_italic    = True if all(r.italic    is True for r in non_empty_runs) else None
-        src_underline = True if all(r.underline is True for r in non_empty_runs) else None
+        b, i, u = _para_fmt(para)
+        src_bold      = True if b else None
+        src_italic    = True if i else None
+        src_underline = True if u else None
         if font_size is None:
             font_size = next((r.font.size for r in non_empty_runs if r.font.size), None)
     else:
@@ -989,45 +1080,37 @@ def create_bilingual_docx(
                             _add_paragraph(content_cell, korean_lines[0], font_size, para_style,
                                            bold=bold, italic=italic, underline=underline)
             elif row_type == 'description':
-                # Build per-paragraph (bold, italic, underline) map directly from the
-                # original cell — LLMs don't reliably emit formatting markers.
-                orig_formats = []
-                for para in content_cell.paragraphs:
-                    if not para.text.strip():
-                        continue
-                    non_empty_runs = [r for r in para.runs if r.text.strip()]
-                    if not non_empty_runs:
-                        orig_formats.append((False, False, False))
-                        continue
-                    p_bold      = all(r.bold      is True for r in non_empty_runs)
-                    p_italic    = all(r.italic    is True for r in non_empty_runs)
-                    p_underline = all(r.underline is True for r in non_empty_runs)
-                    # Also check paragraph-level rPr (w:pPr/w:rPr) for inherited formatting
-                    if not (p_bold or p_italic or p_underline):
-                        pPr = para._p.find(qn('w:pPr'))
-                        if pPr is not None:
-                            rPr_el = pPr.find(qn('w:rPr'))
-                            if rPr_el is not None:
-                                b_el = rPr_el.find(qn('w:b'))
-                                i_el = rPr_el.find(qn('w:i'))
-                                u_el = rPr_el.find(qn('w:u'))
-                                if b_el is not None:
-                                    p_bold      = b_el.get(qn('w:val'), '') not in ('false', '0', 'off')
-                                if i_el is not None:
-                                    p_italic    = i_el.get(qn('w:val'), '') not in ('false', '0', 'off')
-                                if u_el is not None:
-                                    p_underline = u_el.get(qn('w:val'), '') not in ('none', '', 'false', '0', 'off')
-                    orig_formats.append((p_bold, p_italic, p_underline))
+                # Build a per-paragraph format map using _para_fmt so that
+                # bold/italic/underline detection handles inherited (None) runs correctly.
+                orig_formats = [
+                    _para_fmt(para)
+                    for para in content_cell.paragraphs
+                    if para.text.strip()
+                ]
                 for i, line in enumerate(korean_lines):
-                    b, it, u = orig_formats[i] if i < len(orig_formats) else (False, False, False)
+                    # If there are more Korean lines than original paragraphs, repeat
+                    # the last known format rather than silently dropping bold.
+                    if i < len(orig_formats):
+                        b, it, u = orig_formats[i]
+                    elif orig_formats:
+                        b, it, u = orig_formats[-1]
+                    else:
+                        b, it, u = bool(bold), bool(italic), bool(underline)
                     _add_paragraph(content_cell, line, font_size, para_style,
                                    bold=True if b else None,
                                    italic=True if it else None,
                                    underline=True if u else None)
             else:
                 for line in korean_lines:
-                    _add_paragraph(content_cell, line, font_size, para_style,
-                                   bold=bold, italic=italic, underline=underline)
+                    if isinstance(line, list):
+                        # Rich paragraph: list of (text, bold, italic, underline) tuples.
+                        # Per-run italic is already set; bold/underline fall back to
+                        # the cell-level defaults when the run's own value is None.
+                        _add_rich_paragraph(content_cell, line, font_size, para_style,
+                                            default_bold=bold, default_underline=underline)
+                    else:
+                        _add_paragraph(content_cell, line, font_size, para_style,
+                                       bold=bold, italic=italic, underline=underline)
 
             if is_non_english and row_type in ('title', 'description'):
                 _set_cell_bg(content_cell, LIME_RGB)
