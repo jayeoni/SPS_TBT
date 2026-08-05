@@ -332,6 +332,40 @@ def _extract_regions(regions_raw: str, full_text: str) -> str:
     return regions_raw
 
 
+_ORIGINAL_LANG_RE = re.compile(r'\bOriginal\s*:\s*(English|Spanish|French|Portuguese|Arabic|Chinese|Russian)\b', re.IGNORECASE)
+
+_ORIGINAL_LANG_MAP = {
+    'english':    'en',
+    'spanish':    'es',
+    'french':     'fr',
+    'portuguese': 'pt',
+    'arabic':     'ar',
+    'chinese':    'zh',
+    'russian':    'ru',
+}
+
+
+def _read_header_language(doc) -> str | None:
+    """
+    Read the 'Original: English' declaration from the WTO document's first-page
+    header (which contains a table with the document metadata).
+    Returns a language code ('en', 'es', etc.) or None if not found.
+    """
+    try:
+        for section in doc.sections:
+            # The WTO first-page header is a table, so .paragraphs returns nothing;
+            # iterate over all w:t elements in the header XML directly.
+            for hdr in (section.first_page_header, section.header):
+                el = hdr._element
+                text = ' '.join(t.text for t in el.iter(qn('w:t')) if t.text)
+                m = _ORIGINAL_LANG_RE.search(text)
+                if m:
+                    return _ORIGINAL_LANG_MAP.get(m.group(1).lower(), 'en')
+    except Exception:
+        pass
+    return None
+
+
 def _detect_language(text):
     """
     Detect dominant source language from character distribution.
@@ -543,8 +577,14 @@ def parse_notification(docx_path: str) -> dict:
     result['objectives_korean'] = _extract_objectives(full_text)
 
     # ── Language detection ────────────────────────────────────────────────
-    detect_text = result['description'] or result['title'] or result['products']
-    result['source_language'] = _detect_language(detect_text)
+    # Primary: read the explicit "Original: English" declaration in the WTO header.
+    # Fallback: character-distribution heuristic on description/title/products.
+    header_lang = _read_header_language(doc)
+    if header_lang is not None:
+        result['source_language'] = header_lang
+    else:
+        detect_text = result['description'] or result['title'] or result['products']
+        result['source_language'] = _detect_language(detect_text)
 
     # ── Addendum-specific fields ──────────────────────────────────────────
     if result['is_addendum']:
