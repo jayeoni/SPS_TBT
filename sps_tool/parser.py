@@ -336,13 +336,22 @@ def _detect_language(text):
     """
     Detect dominant source language from character distribution.
     Returns 'en', 'es', or 'pt'.
+
+    Requires at least 3 accented characters AND at least 1% of letters to be
+    accented before classifying as non-English.  This prevents misclassification
+    when an otherwise-English document merely mentions a Spanish agency name
+    (e.g. 'Agencia de Regulación...') or a single accented product name.
     """
     if not text:
         return 'en'
     # Spanish/Portuguese indicator characters
     sp_pt_chars = set('áéíóúàèìòùâêîôûãõñüçÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÑÜÇ')
-    count = sum(1 for c in text if c in sp_pt_chars)
-    if count == 0:
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return 'en'
+    count = sum(1 for c in letters if c in sp_pt_chars)
+    # Require both a minimum count AND a minimum proportion to avoid false positives
+    if count < 3 or count / len(letters) < 0.01:
         return 'en'
     # Very rough heuristic: ã/õ = probably Portuguese, ñ = probably Spanish
     pt_chars = set('ãõÃÕ')
