@@ -11,9 +11,8 @@ import json
 import logging
 import traceback
 from pathlib import Path
-from datetime import datetime
 
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template
 from dotenv import load_dotenv
 
 # Load .env from the tool's own directory
@@ -22,9 +21,6 @@ load_dotenv(BASE_DIR / '.env')
 
 import parser as sps_parser
 import llm as sps_llm
-import date_engine
-import export_lookup as exp_lookup
-import excel_writer
 import word_writer
 import dept_lookup
 
@@ -37,12 +33,10 @@ log = logging.getLogger(__name__)
 CONFIG_FILE = BASE_DIR / 'config.json'
 
 DEFAULT_CONFIG = {
-    'excel_path':       os.environ.get('EXCEL_PATH', ''),
-    'export_data_path': os.environ.get('EXPORT_DATA_PATH', ''),
-    'api_key':          os.environ.get('ANTHROPIC_API_KEY', ''),
-    'target_month':     '',      # e.g. '26.4월'; empty = auto-detect
-    'llm_backend':      'ollama',  # 'ollama' (local, free) or 'anthropic'
-    'ollama_model':     'qwen2.5:7b',
+    'output_dir':   os.environ.get('OUTPUT_DIR', ''),
+    'api_key':      os.environ.get('ANTHROPIC_API_KEY', ''),
+    'llm_backend':  'ollama',  # 'ollama' (local, free) or 'anthropic'
+    'ollama_model': 'qwen2.5:7b',
 }
 
 
@@ -81,19 +75,6 @@ def load_terminology() -> dict:
     return _terminology
 
 
-# ── Export lookup (loaded once at startup) ────────────────────────────────────
-_export_lookup = exp_lookup.get_lookup()
-
-
-def ensure_export_loaded(cfg: dict):
-    path = cfg.get('export_data_path', '')
-    if path and Path(path).exists() and not _export_lookup.is_loaded():
-        try:
-            _export_lookup.load(path)
-            log.info('수출 실적 데이터 로드 완료: %s', path)
-        except Exception as e:
-            log.warning('수출 데이터 로드 실패: %s', e)
-
 
 # ── Core processing pipeline ──────────────────────────────────────────────────
 def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = None) -> dict:
@@ -102,24 +83,20 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
     Returns a result dict for display in the UI.
     """
     result = {
-        'filename':      Path(docx_path).name,
-        'doc_number':    '',
+        'filename':          Path(docx_path).name,
+        'doc_number':        '',
         'notifying_country': '',
-        'title_kr':      '',
-        'type':          '',
-        'success':       False,
-        'error':         None,
-        'excel_updated': False,
-        'word_file':     '',
-        'flags':         [],
-        'importance':    '',
-        'category':      '',
-        'row_idx':       None,
-        'skipped':       False,
+        'title_kr':          '',
+        'type':              '',
+        'success':           False,
+        'error':             None,
+        'word_file':         '',
+        'importance':        '',
+        'category':          '',
     }
 
     try:
-        # ── 1. Parse Word document ─────────────────────────────────────────
+        # ── 1. Parse ──────────────────────────────────────────────────────
         log.info('[%s] 파싱 중...', result['filename'])
         parsed = sps_parser.parse_notification(docx_path)
         result['doc_number'] = parsed.get('doc_number', '')
@@ -129,139 +106,47 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
             result['error'] = '문서번호를 찾을 수 없습니다. 파일을 확인해주세요.'
             return result
 
-        # ── 2. Get 배포일 from Excel (needed for date calculations) ─────────
-        excel_path = cfg.get('excel_path', '')
-        base_date = None
-        if excel_path and Path(excel_path).exists():
-            base_date = excel_writer.get_base_date(
-                excel_path, result['doc_number'], cfg.get('target_month')
-            )
-
-        # ── 3. Translate regions to Korean & determine export item logic ──────
+        # ── 2. Regions ────────────────────────────────────────────────────
         regions_raw = parsed.get('regions', '')
         regions_kr = dept_lookup.translate_regions(regions_raw)
         parsed['regions_kr'] = regions_kr
-
         is_all_partners = regions_kr == '모든 교역국'
-        is_korea_targeted = '한국' in regions_kr and not is_all_partners
 
-        # export_items determined after LLM (needs 해당품목 for Korea-targeted case)
-        export_items, export_uncertain = '', False
-
-        # ── 4. LLM processing ──────────────────────────────────────────────
+        # ── 3. LLM ───────────────────────────────────────────────────────
         log.info('[%s] LLM 처리 중 (번역 + 분류)...', result['filename'])
         if terminology is None:
             terminology = load_terminology()
         llm_result = sps_llm.process_notification(
             parsed=parsed,
-            export_items=export_items,
+            export_items='',
             terminology=terminology,
             api_key=cfg.get('api_key', ''),
             llm_backend=cfg.get('llm_backend', 'ollama'),
             ollama_model=cfg.get('ollama_model', 'qwen2.5:7b'),
         )
 
-        result['title_kr']  = llm_result.get('제목', '')
-        result['importance'] = llm_result.get('중요도', '')  # may be overridden below
-        result['category']   = llm_result.get('구분', '')
+        result['title_kr']          = llm_result.get('제목', '')
+        result['category']          = llm_result.get('구분', '')
         result['notifying_country'] = parsed.get('notifying_member', '')
 
-        # Override 통보국_kr with a deterministic lookup — the same COUNTRY_KR table
-        # used for 해당국가.  Small LLMs (qwen2.5:7b) can swap notifying country and
-        # affected regions even with a clean prompt; this removes the LLM from that path.
         _notifying_kr = dept_lookup.translate_regions(parsed.get('notifying_member', ''))
         if _notifying_kr:
             llm_result['통보국_kr'] = _notifying_kr
 
-        # ── 4b. Compute 국내수출품목 ───────────────────────────────────────
-        if is_korea_targeted:
-            export_items = llm_result.get('해당품목', '')
-        elif is_all_partners:
-            ensure_export_loaded(cfg)
-            export_items, export_uncertain = _export_lookup.lookup(
-                parsed.get('notifying_member', ''),
-                llm_result.get('해당품목', ''),
-                is_all_partners=True,
-            )
-        # else: third-country restriction → export_items stays ''
-
-        # ── 5. Date calculations ───────────────────────────────────────────
-        date_fields = {}
-        if base_date:
-            if parsed.get('comment_deadline_raw'):
-                resolved, _ = date_engine.resolve_date(
-                    parsed['comment_deadline_raw'],
-                    base_date,
-                    is_emergency=parsed['is_emergency'],
-                )
-                date_fields['의견마감일'] = resolved
-            if parsed.get('entry_force_raw'):
-                resolved, _ = date_engine.resolve_date(
-                    parsed['entry_force_raw'],
-                    base_date,
-                )
-                date_fields['발효일'] = resolved
-        # Emergency: comment deadline is always '-'
-        if parsed['is_emergency']:
-            date_fields['의견마감일'] = '-'
-
-        # ── 6. Assemble all Excel fields ───────────────────────────────────
-        is_non_english = parsed.get('source_language', 'en') != 'en'
-
-        notif_type = '긴급' if parsed['is_emergency'] else '일반'
-
         importance = llm_result.get('중요도', '')
-        # Hard rule: third-country restriction → always '-'
         if not is_all_partners and '한국' not in regions_kr:
             importance = '-'
         result['importance'] = importance
 
-        all_fields = {
-            '중요도':       importance,
-            '통보유형':     notif_type,
-            '통보국':       llm_result.get('통보국_kr', ''),
-            '제목':         llm_result.get('제목', ''),
-            '내용':         llm_result.get('내용', ''),
-            '해당품목':     llm_result.get('해당품목', ''),
-            '목적':         llm_result.get('목적', ''),
-            '해당국가':     regions_kr,
-            '국내수출품목': export_items,
-            '관련부서':     (dept_lookup.lookup_dept(
-                                llm_result.get('구분', ''),
-                                llm_result.get('통보내용', ''),
-                                llm_result.get('통보_세부', ''),
-                            ) or llm_result.get('관련부서', '')),
-            '주간보고':     llm_result.get('주간보고', ''),
-            '구분':         llm_result.get('구분', ''),
-            '품목':         llm_result.get('품목', ''),
-            **date_fields,
-        }
-
-        # Collect uncertainty flags
-        flags = list(llm_result.get('flags', []))
-        if export_uncertain:
-            flags.append('국내수출품목')
-        if not dept_lookup.lookup_dept(
-            llm_result.get('구분', ''),
-            llm_result.get('통보내용', ''),
-            llm_result.get('통보_세부', ''),
-        ):
-            flags.append('관련부서')
-
-        result['flags'] = flags
-
-        # ── 7. Write to Excel — SKIPPED (focus on Word translation only) ────
-
-        # ── 8. Create bilingual Word file ─────────────────────────────────
+        # ── 4. Create bilingual Word file ─────────────────────────────────
         log.info('[%s] 번역본 Word 파일 생성 중...', result['filename'])
         output_word = word_writer.create_bilingual_docx(
             source_path=docx_path,
             translations={
                 **llm_result,
                 '통보국_kr': llm_result.get('통보국_kr', ''),
-                '해당국가': regions_kr or llm_result.get('해당국가', ''),
+                '해당국가':  regions_kr or llm_result.get('해당국가', ''),
             },
-            is_non_english=is_non_english,
             is_addendum=parsed['is_addendum'],
         )
         result['word_file'] = Path(output_word).name
@@ -280,19 +165,15 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
 @app.route('/')
 def index():
     cfg = load_config()
-    ensure_export_loaded(cfg)
     missing = []
     if cfg.get('llm_backend', 'ollama') == 'anthropic' and not cfg.get('api_key'):
         missing.append('ANTHROPIC_API_KEY')
-    if not cfg.get('excel_path') or not Path(cfg['excel_path']).exists():
-        missing.append('Excel 파일 경로')
     return render_template('index.html', config=cfg, missing=missing)
 
 
 @app.route('/process', methods=['POST'])
 def process():
     cfg = load_config()
-    ensure_export_loaded(cfg)
     terminology = load_terminology()
 
     files = request.files.getlist('files')
@@ -309,20 +190,15 @@ def process():
             })
             continue
 
-        # Save uploaded file to a temp location alongside the source
-        # We save it to the same folder as the Excel file for now
-        excel_dir = Path(cfg.get('excel_path', BASE_DIR)).parent
-        if not excel_dir.exists():
-            excel_dir = BASE_DIR
+        output_dir = Path(cfg.get('output_dir', '') or BASE_DIR)
+        if not output_dir.exists():
+            output_dir = BASE_DIR
 
-        tmp_path = excel_dir / uploaded_file.filename
+        tmp_path = output_dir / uploaded_file.filename
         uploaded_file.save(str(tmp_path))
 
         result = process_single_file(str(tmp_path), cfg, terminology)
         results.append(result)
-
-        # If the file was uploaded (not already there), we leave the original
-        # and the _번역.docx alongside it.
 
     return jsonify({'results': results})
 
@@ -334,33 +210,20 @@ def settings():
 
     if request.method == 'POST':
         new_cfg = {
-            'excel_path':       request.form.get('excel_path', '').strip(),
-            'export_data_path': request.form.get('export_data_path', '').strip(),
-            'target_month':     request.form.get('target_month', '').strip(),
-            'llm_backend':      request.form.get('llm_backend', 'ollama'),
-            'ollama_model':     request.form.get('ollama_model', 'qwen2.5:7b').strip(),
+            'output_dir':   request.form.get('output_dir', '').strip(),
+            'llm_backend':  request.form.get('llm_backend', 'ollama'),
+            'ollama_model': request.form.get('ollama_model', 'qwen2.5:7b').strip(),
         }
         new_api_key = request.form.get('api_key', '').strip()
 
-        # Save API key to .env so it persists
         if new_api_key:
             env_path = BASE_DIR / '.env'
-            env_content = f'ANTHROPIC_API_KEY={new_api_key}\n'
-            env_content += f'EXCEL_PATH={new_cfg["excel_path"]}\n'
-            env_content += f'EXPORT_DATA_PATH={new_cfg["export_data_path"]}\n'
-            env_path.write_text(env_content, encoding='utf-8')
+            env_path.write_text(f'ANTHROPIC_API_KEY={new_api_key}\n', encoding='utf-8')
             load_dotenv(env_path, override=True)
             cfg['api_key'] = new_api_key
 
         cfg.update(new_cfg)
         save_config(cfg)
-
-        # Reload export data if path changed
-        if new_cfg['export_data_path']:
-            _export_lookup._df = None
-            _export_lookup._path = None
-            ensure_export_loaded(cfg)
-
         message = '설정이 저장되었습니다.'
 
     return render_template('settings.html', config=cfg, message=message)
@@ -370,11 +233,9 @@ def settings():
 def health():
     cfg = load_config()
     return jsonify({
-        'api_key_set':    bool(cfg.get('api_key')),
-        'excel_exists':   bool(cfg.get('excel_path')) and Path(cfg['excel_path']).exists(),
-        'export_loaded':  _export_lookup.is_loaded(),
-        'llm_backend':    cfg.get('llm_backend', 'ollama'),
-        'ollama_model':   cfg.get('ollama_model', 'qwen2.5:7b'),
+        'api_key_set':  bool(cfg.get('api_key')),
+        'llm_backend':  cfg.get('llm_backend', 'ollama'),
+        'ollama_model': cfg.get('ollama_model', 'qwen2.5:7b'),
     })
 
 
@@ -390,7 +251,5 @@ def ollama_status():
 if __name__ == '__main__':
     import webbrowser
     import threading
-    cfg = load_config()
-    ensure_export_loaded(cfg)
     threading.Timer(1.5, lambda: webbrowser.open('http://localhost:5000')).start()
     app.run(host='127.0.0.1', port=5000, debug=False)

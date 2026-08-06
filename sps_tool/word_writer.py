@@ -15,7 +15,6 @@ from docx.oxml import OxmlElement
 log = logging.getLogger(__name__)
 
 KOREAN_FONT = '맑은 고딕'
-LIME_RGB    = (204, 255, 153)
 
 LANG_KR = {
     'english': '영어', 'spanish': '스페인어', 'portuguese': '포르투갈어',
@@ -302,18 +301,6 @@ def _apply_korean_font(run):
     rFonts.set(qn('w:eastAsia'), KOREAN_FONT)
     rPr.append(rFonts)
 
-
-def _set_cell_bg(cell, rgb: tuple):
-    tc = cell._tc
-    tcPr = tc.get_or_add_tcPr()
-    shd = OxmlElement('w:shd')
-    hex_color = '{:02X}{:02X}{:02X}'.format(*rgb)
-    shd.set(qn('w:val'), 'clear')
-    shd.set(qn('w:color'), 'auto')
-    shd.set(qn('w:fill'), hex_color)
-    for existing in tcPr.findall(qn('w:shd')):
-        tcPr.remove(existing)
-    tcPr.append(shd)
 
 
 def _add_paragraph(cell, text: str, font_size=None, style_name=None, bold=None, italic=None, underline=None):
@@ -925,7 +912,6 @@ def _translate_addendum_top_paragraphs(doc, translations):
 def create_bilingual_docx(
     source_path: str,
     translations: dict,
-    is_non_english: bool = False,
     is_addendum: bool = False,
 ) -> str:
     """
