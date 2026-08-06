@@ -1112,8 +1112,6 @@ def create_bilingual_docx(
                         _add_paragraph(content_cell, line, font_size, para_style,
                                        bold=bold, italic=italic, underline=underline)
 
-            if is_non_english and row_type in ('title', 'description'):
-                _set_cell_bg(content_cell, LIME_RGB)
 
     if is_addendum:
         _translate_addendum_reg_title(doc, translations)
