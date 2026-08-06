@@ -71,6 +71,7 @@ KNOWN_AGENCIES = [
     (re.compile(r'Agencia de Regulaci[oó]n y Control Fito y Zoosanitario|\bAGROCALIDAD\b', re.IGNORECASE), '동식물위생관리규제청(AGROCALIDAD)'),
     (re.compile(r'ministry of agriculture and livestock', re.IGNORECASE), '농축산부(MAG)'),
     (re.compile(r'Servicio Nacional de Sanidad Agraria|National Agrarian Health Service|\bSENASA\b', re.IGNORECASE), '국립농업위생청(SENASA)'),
+    (re.compile(r'Servicio Nacional de Sanidad, Inocuidad y Calidad Agroalimentaria|\bSENASICA\b', re.IGNORECASE), '국립농식품위생무해품질원(SENASICA)'),
     (re.compile(r'Instituto Colombiano Agropecuario|Colombian Agricultural Institute|\bICA\b', re.IGNORECASE), '콜롬비아농업청(ICA)'),
 ]
 
