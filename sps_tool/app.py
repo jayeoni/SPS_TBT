@@ -9,6 +9,8 @@ sys.path.insert(0, str(_Path(__file__).parent))
 import os
 import json
 import logging
+import shutil
+import tempfile
 import traceback
 from pathlib import Path
 
@@ -77,7 +79,8 @@ def load_terminology() -> dict:
 
 
 # ── Core processing pipeline ──────────────────────────────────────────────────
-def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = None) -> dict:
+def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = None,
+                         output_dir: str | None = None) -> dict:
     """
     Full processing pipeline for one WTO SPS notification file.
     Returns a result dict for display in the UI.
@@ -148,6 +151,7 @@ def process_single_file(docx_path: str, cfg: dict, terminology: dict | None = No
                 '해당국가':  regions_kr or llm_result.get('해당국가', ''),
             },
             is_addendum=parsed['is_addendum'],
+            output_dir=output_dir,
         )
         result['word_file'] = Path(output_word).name
 
@@ -190,14 +194,21 @@ def process():
             })
             continue
 
-        output_dir = Path(cfg.get('output_dir', '') or BASE_DIR)
+        excel_dir = Path(cfg['excel_path']).parent if cfg.get('excel_path') else None
+        output_dir = Path(cfg.get('output_dir', '') or excel_dir or BASE_DIR)
         if not output_dir.exists():
             output_dir = BASE_DIR
 
-        tmp_path = output_dir / uploaded_file.filename
+        # Save the upload to a scratch dir (not output_dir) so no copy of the
+        # original .docx is left behind next to the translated file.
+        tmp_dir = Path(tempfile.mkdtemp(prefix='sps_upload_'))
+        tmp_path = tmp_dir / uploaded_file.filename
         uploaded_file.save(str(tmp_path))
 
-        result = process_single_file(str(tmp_path), cfg, terminology)
+        try:
+            result = process_single_file(str(tmp_path), cfg, terminology, output_dir=str(output_dir))
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
         results.append(result)
 
     return jsonify({'results': results})

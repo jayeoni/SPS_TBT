@@ -914,13 +914,16 @@ def create_bilingual_docx(
     source_path: str,
     translations: dict,
     is_addendum: bool = False,
+    output_dir: str | None = None,
 ) -> str:
     """
     Create a bilingual Word file by appending Korean translations to each
     content cell. Returns the output file path (*_번역.docx).
+    Written into output_dir if given, otherwise next to source_path.
     """
     source = Path(source_path)
-    output_path = source.parent / (source.stem + '_번역.docx')
+    target_dir = Path(output_dir) if output_dir else source.parent
+    output_path = target_dir / (source.stem + '_번역.docx')
     shutil.copy2(source_path, output_path)
 
     doc = Document(str(output_path))

@@ -1,7 +1,8 @@
 {
-  "excel_path": "C:\\Users\\mafra\\Desktop\\SPS통보문\\260514 SPS 통보문 내역(5월 1주).xlsx",
-  "export_data_path": "C:\\Users\\mafra\\Desktop\\SPS통보문\\2025_연간 전체실적_전체.xlsx",
-  "target_month": "26.5월",
+  "output_dir": "",
   "llm_backend": "ollama",
-  "ollama_model": "qwen2.5:7b"
+  "ollama_model": "qwen2.5:7b",
+  "excel_path": "C:\\Users\\mafra\\Desktop\\SPS통보문\\260805 SPS 통보문 내역(7월 5주)_검토요청.xlsx",
+  "export_data_path": "C:\\Users\\mafra\\Desktop\\SPS통보문\\2025_연간 전체실적_전체.xlsx",
+  "target_month": "26.7월"
 }
